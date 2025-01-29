@@ -1,4 +1,5 @@
 FROM condaforge/miniforge3:latest
+
 # System dependencies
 RUN apt-get update && apt-get install -y \
     git \
@@ -11,28 +12,27 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libtiff-dev \
     libwebp-dev \
+    libgl1-mesa-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-    # Create working directory
+
+# Create working directory
 WORKDIR /app
 
-RUN conda create -c conda-forge -n  micro-sam -y micro_sam python=3.11
-SHELL ["conda", "run", "-n", "micro-sam", "/bin/bash", "-c"]
-RUN conda install pip
-RUN conda install -c conda-forge pillow>=10.1
-
-
+# Install BIAFLOWS requirements in base environment
+RUN conda install -y python=3.7
 RUN pip install git+https://github.com/cytomine-uliege/Cytomine-python-client.git@v2.7.3
 RUN pip install git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2
 
+# Create separate conda environment for micro-sam
+RUN conda create -n sam -y 
+RUN conda run -n sam conda install -c conda-forge micro_sam
 
-# Keep container running for interactive development
+# Copy run script
+COPY run.py /app/run.py
+COPY descriptor.json /app/descriptor.json
+
+#include the micro-sam models
+
+# Keep container running with base environment (BIAFLOWS)
 CMD ["bash"]
-
-
-#conda activate micro-sam
-#pip install 'Pillow>=10.1'
-#pip install git+https://github.com/Neubias-WG5/biaflows-utilities.git@v0.9.2 --no-dependencies
-#pip install cytomine-python-client==2.7.3
-
-
