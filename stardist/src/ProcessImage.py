@@ -213,18 +213,25 @@ class ProcessImage:
         self._normalized_pixels = normalize_nuclei_intensities(
             self._pixels, self._labels)    
             
-    def measure_intensity(self):
+    def measure_intensity(self,norm = False):
         """
         Measure intensities in normalized images
         """
-        if not hasattr(self, '_normalized_pixels'):
-            self.normalize_intensities()
+        if norm:
+            if not hasattr(self, '_normalized_pixels'):
+                self.normalize_intensities()
+                
+            self.all_statistics = measure_intensity(
+                self._normalized_pixels, self._labels, 
+                self._size_z, self._size_t, self._size_c)
             
-        self.all_statistics = measure_intensity(
-            self._normalized_pixels, self._labels, 
-            self._size_z, self._size_t, self._size_c)
-        
-        return self.all_statistics
+            return self.all_statistics
+        else:
+            self.all_statistics = measure_intensity(
+                self._pixels, self._labels, 
+                self._size_z, self._size_t, self._size_c)
+            
+            return self.all_statistics
     
     def get_measurements_to_df(self):
         """
