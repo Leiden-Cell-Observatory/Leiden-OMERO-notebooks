@@ -128,6 +128,7 @@ class ProcessImage:
     SEGMENTATION_NAMESPACE = "stardist.segmentation"
     ROI_NAME = "Stardist Nuclei"
     ROI_DESCRIPTION = "Nuclei segmentation using Stardist"
+    IMAGE_DESCRIPTION = "Nuclei segmentation using Stardist"
     
     def __init__(self, conn: Any, image: Any,job_id: Any, model: Any) -> None:
         """
@@ -180,6 +181,23 @@ class ProcessImage:
                 
         return normalize_nuclei_intensities(stack, self._labels)
 
+
+    def get_image_stack(self) -> np.ndarray:
+        """
+        Get all channels as  numpy array
+        Returns:
+            4D numpy array (z,c,y,x)
+        """
+        stack = np.zeros((self._size_z, self._size_c, 
+                        self._pixels.getSizeY(), 
+                        self._pixels.getSizeX()), dtype=np.float32)
+        
+        for z in range(self._size_z):
+            for c in range(self._size_c):
+                stack[z,c] = self._pixels.getPlane(z, c, 0)
+                
+        return stack
+
     def measure_fucci_intensities(self):
         """
         Measure FUCCI reporter intensities in nuclei
@@ -210,7 +228,7 @@ class ProcessImage:
         """
         Normalize intensities for all channels
         """
-        self._normalized_pixels = normalize_nuclei_intensities(
+        self._normalized_pixels = self.get_normalized_stack(
             self._pixels, self._labels)    
             
     def measure_intensity(self,norm = False):
@@ -240,7 +258,7 @@ class ProcessImage:
         if not hasattr(self, 'all_statistics'):
             self.measure_intensity()
             
-        return pd.concat(self.all_statistics, ignore_index=True)
+        return self.all_statistics
 
     def segment_nuclei(self, nucl_channel: int) -> None:
         """
@@ -311,7 +329,7 @@ class ProcessImage:
             print(f"Slice segmentation failed: {str(e)}")
             raise
             
-    def save_segmentation_to_omero_as_new_image(self, new_img_name: str, desc: str) -> None:
+    def save_segmentation_to_omero_as_new_image(self, new_img_name: str, desc: Optional[str] = None) -> None:
         """
         Save segmentation as new OMERO image.
         
@@ -324,7 +342,10 @@ class ProcessImage:
         """
         if self._labels is None:
             raise ValueError("No segmentation data available - run segment_nuclei first")
-            
+        
+        if desc is None:
+            desc = self.IMAGE_DESCRIPTION
+
         try:
             # Convert labels to proper numpy array if needed
             labels_array = np.asarray(self._labels)
@@ -347,11 +368,15 @@ class ProcessImage:
             print(f"Failed to save new image: {str(e)}")
             raise
 
-    def save_segmentation_to_omero_as_attach(self, tmp_dir: str, desc: str) -> None:
+
+    def save_segmentation_to_omero_as_attach(self, tmp_dir: str, desc: Optional[str] = None) -> None:
         """Save segmentation as OMERO attachment."""
         if self._labels is None:
             raise ValueError("No segmentation data available - run segment_nuclei first")
         
+        if desc is None:
+            desc = self.IMAGE_DESCRIPTION
+
         tmp_path = Path(tmp_dir)
         if not tmp_path.exists():
             tmp_path.mkdir(parents=True)
@@ -489,3 +514,73 @@ class ProcessImage:
             return all_polygons
         else:
             raise ValueError("Unsupported image dimensions")
+        
+    def visualize_measurements(self, channel: int = 0) -> None:
+        """
+        Visualize segmentation and measurements using napari
+        
+        Args:
+            channel: Channel to display (default: 0)
+        """
+        import napari
+        from napari.settings import get_settings
+        settings = get_settings()
+        settings.application.ipy_interactive = False
+        
+        # Get the image data for specified channel
+        image_data = self._pixels.getPlane(0, channel, 0)
+        
+        # Create viewer and add image layer
+        viewer = napari.Viewer()
+        viewer.add_image(image_data, name='Image')
+        
+        if self._labels is not None:
+            # Add labels layer
+            viewer.add_labels(self._labels[0], name='Nuclei')
+            
+            # Create shape layer from polygons if available
+            if self._polygons is not None:
+                coords_array = self._polygons['coord']
+                shapes = []
+                shape_types = []
+                for i in range(coords_array.shape[0]):
+                    # Get coordinates for current polygon
+                    xy_coords = coords_array[i]
+                    # Create polygon points (swap x,y to match napari format)
+                    points = np.column_stack((xy_coords[1], xy_coords[0]))
+                    shapes.append(points)
+                    shape_types.append('polygon')
+                
+                # Add shapes layer
+                viewer.add_shapes(
+                    shapes,
+                    shape_type=shape_types,
+                    edge_color='red',
+                    face_color='transparent',
+                    name='Polygons'
+                )
+                
+            # Add measurements if available
+            if hasattr(self, 'all_statistics'):
+                # Get centroids and measurements
+                stats = self.all_statistics
+                centroids = np.column_stack((
+                    stats['centroid_x'],
+                    stats['centroid_y']
+                ))
+                
+                # Create points layer with measurements
+                viewer.add_points(
+                    centroids,
+                    properties={
+                        'mean_intensity': stats['mean_intensity'],
+                        'area': stats['area']
+                    },
+                    text={
+                        'text': '{mean_intensity:.1f}',
+                        'size': 8,
+                    },
+                    name='Measurements'
+                )
+        
+        napari.run()
