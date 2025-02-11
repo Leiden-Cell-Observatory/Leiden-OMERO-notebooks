@@ -12,7 +12,7 @@ These notebooks are based on micro-sam (https://github.com/computational-cell-an
 
 To be able to use the notebooks you need to create a conda environment.
 ```
-conda env create -f environment.yml
+conda env create -f environment_omero_micro_sam.yml
 ```
 Then activate the environment.
 ```
