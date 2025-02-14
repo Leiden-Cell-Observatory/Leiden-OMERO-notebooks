@@ -1,1 +1,17 @@
-site_name: My Docs
+site_name: Your Project Name
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+
+repo_url: <https://github.com/Leiden-Cell-Observatory/omero_ipynb>
+site_url: <https://Leiden-Cell-Observatory.github.io/omero_ipynb/>
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - 'Getting Started': 'guide/getting-started.md'
+    - 'Installation': 'guide/installation.md'
+  - API: api.md
