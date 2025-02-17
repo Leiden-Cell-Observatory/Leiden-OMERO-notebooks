@@ -16,7 +16,7 @@ Check respective folders for details.
 ## Micro-sam
 These notebooks are based on [micro-sam](https://github.com/computational-cell-analytics/micro-sam).
 
-For more detailed information, please refer to the [micro-sam README](../micro-sam/README.md).
+For more detailed information, please refer to the [micro-sam README](../microsam/README.md).
 
 To use the notebooks, you need to create a conda environment:
 
