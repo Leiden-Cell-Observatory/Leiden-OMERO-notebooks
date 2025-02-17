@@ -49,7 +49,6 @@ def measure_intensity(pixels, labels, size_z, size_t, size_c):
     
     return all_statistics_df
 
-
 def calculate_norm_factor(slice_data, labels):
     """
     Calculate normalization factor for a single z-slice
@@ -126,9 +125,9 @@ class ProcessImage:
     
     # Class constants
     SEGMENTATION_NAMESPACE = "stardist.segmentation"
-    ROI_NAME = "Stardist Nuclei"
-    ROI_DESCRIPTION = "Nuclei segmentation using Stardist"
-    IMAGE_DESCRIPTION = "Nuclei segmentation using Stardist"
+    ROI_NAME = "Stardist_nuclei"
+    ROI_DESCRIPTION = "stardist_nuclei"
+    IMAGE_DESCRIPTION = "Stardist segmentation nuclei"
     
     def __init__(self, conn: Any, image: Any,job_id: Any, model: Any) -> None:
         """
@@ -367,7 +366,6 @@ class ProcessImage:
         except Exception as e:
             print(f"Failed to save new image: {str(e)}")
             raise
-
 
     def save_segmentation_to_omero_as_attach(self, tmp_dir: str, desc: Optional[str] = None) -> None:
         """Save segmentation as OMERO attachment."""
