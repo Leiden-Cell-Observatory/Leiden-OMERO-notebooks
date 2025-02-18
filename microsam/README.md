@@ -13,7 +13,7 @@ WIth micro-sam the following routines are available.
 - Python
 - Conda
 
-Available Notebooks
+## Available Notebooks
 
 - environment_omero_micro_sam.yml - Conda environment specification with all required dependencies.
 - local-microsam-prediction.ipynb - Run Micro-SAM predictions on local image data.
@@ -42,6 +42,7 @@ jupyter notebook
 
 ## Setup connection with OMERO
 Currently we make use of .env file to store credentials, this is not optimal on a shared computer. Looking for a better solution.
+For now take the ```.env.example``` file and rename to ```.env``` . Save your login details, remove when you are done.
 
 > **Warning:**
 > Ensure that you remove your login and password from the `.env` file when you are done!
