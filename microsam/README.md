@@ -1,11 +1,11 @@
 # OMERO micro-sam notebooks
 
 These notebooks are based on [micro-sam](https://github.com/computational-cell-analytics/micro-sam).
-For micro-sam the following routines can be followed.
+WIth micro-sam the following routines are available.
 
 - Semi manual anotation of data. This can be data on OMERO. The notebook allows to select a random set of images from your dataset. Using a OMERO.table, what images you have annotated can be store
-- Finetuning of AI model on your data
-- Applying fine-tuned model to your image data.
+- Finetuning of AI model on your data (on OMERO)
+- Applying fine-tuned model to your image data (on OMERO)
 
 ## Running on image analysis computer (Windows)
 
@@ -13,11 +13,11 @@ These instructions will help to run jupyter notebooks with OMERO at Leiden Unive
 
 To access the Jupyter notebooks you can either use VS code:
 
-- Open VS Code from Start menu, File -> Open Folder
+- Open **VS Code** from Start menu, File -> Open Folder
     - make sure Python and Jypyter extensions are installed, VS code will probably ask if neccesary)
     - Open the Notebook you want to use, make sure the right conda environment is selected at the right-top of the notebook.
 
- - or use Powershell to start a Jupyter notebook server:
+ - or use **Powershell** to start a Jupyter notebook server:
 
 ```bash
 cd "E:\[Github repo location]\omero_ipynb"
