@@ -7,15 +7,30 @@ WIth micro-sam the following routines are available.
 - Finetuning of AI model on your data (on OMERO)
 - Applying fine-tuned model to your image data (on OMERO)
 
+## Prerequisites
+- CUDA-capable GPU (recommended)
+- OMERO server access (for OMERO-connected workflows)
+- Python
+- Conda
+
+Available Notebooks
+
+- environment_omero_micro_sam.yml - Conda environment specification with all required dependencies.
+- local-microsam-prediction.ipynb - Run Micro-SAM predictions on local image data.
+- local-microsam-training.ipynb - Train Micro-SAM models using local datasets.
+- omero-microsam-annotate-batch.ipynb - Create training data by annotating images from OMERO.
+- omero-microsam-prediction.ipynb - Apply trained models to images stored in OMERO.
+- omero-microsam-training.ipynb - Train Micro-SAM models using OMERO-hosted datasets.
+
 ## Running on image analysis computer (Windows)
 
-These instructions will help to run jupyter notebooks with OMERO at Leiden University
+These instructions will help to run Jupyter notebooks with OMERO at Leiden University
 
 To access the Jupyter notebooks you can either use VS code:
 
-- Open **VS Code** from Start menu, File -> Open Folder
+- Open **VS Code** from Start menu, 
     - make sure Python and Jypyter extensions are installed, VS code will probably ask if neccesary)
-    - Open the Notebook you want to use, make sure the right conda environment is selected at the right-top of the notebook.
+    - Open the the folder with the notebooks ```File -> Open Folder``` . Select the notebook you want to use, make sure the right conda environment is selected at the right-top of the notebook.
 
  - or use **Powershell** to start a Jupyter notebook server:
 
