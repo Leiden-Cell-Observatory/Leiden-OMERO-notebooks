@@ -2,6 +2,7 @@
 
 This GitHub repository contains Jupyter notebooks to interact with OMERO data.
 
+
 The notebooks are still in an early stage but can be used as inspiration on how to analyze data from OMERO. They show how data can be loaded from OMERO and how results can be stored back into OMERO as attachments or ROIs.
 
 ## Installation
@@ -10,7 +11,8 @@ It is recommended to run these notebooks in a conda environment to make handling
 
 You will need to install conda. It is recommended to use MiniForge for this: [MiniForge](https://github.com/conda-forge/miniforge).
 
-Handling multiple AI tools in one environment can be difficult; hence, separate conda environment files are available to work with the tool and OMERO.
+Handling multiple AI tools in a signle environment can be difficult, 
+hence separate conda environment files are available to should work with the tool and OMERO.
 
 Check respective folders for details.
 ## Micro-sam
