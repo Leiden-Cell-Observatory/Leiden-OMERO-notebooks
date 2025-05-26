@@ -29,6 +29,7 @@ RUN apt-get update && \
         libxcb-xinerama0 \
         libxcb-xkb1 \
         libxkbcommon-x11-0 \
+        libxcb-cursor0 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,7 +48,7 @@ ENV CONDA_FETCH_TIMEOUT=600
 RUN conda create -n micro-sam python=3.12 -c conda-forge -y && \
     conda install -n micro-sam micro_sam && \
     conda run -n micro-sam pip install https://github.com/glencoesoftware/zeroc-ice-py-linux-x86_64/releases/download/20240202/zeroc_ice-3.6.5-cp312-cp312-manylinux_2_28_x86_64.whl && \
-    conda run -n micro-sam pip install ezomero python-dotenv omero-py opencv-python
+    conda run -n micro-sam pip install ezomero python-dotenv omero-py opencv-python-headless #install headless to preven issues with qt5
 
 # Create cellpose environment with GUI support
 RUN conda create -n cellpose-env python=3.9 -c conda-forge -y && \
