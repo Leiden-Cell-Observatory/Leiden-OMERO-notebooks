@@ -23,7 +23,7 @@ from .file_io_functions import (
 from .omero_functions import upload_rois_and_labels
 
 
-def process_omero_batch_with_dask(
+def process_omero_batch(
     conn,
     images_list,
     output_folder: str,
@@ -494,7 +494,7 @@ def process_omero_batch_with_dask(
             # For ROI creation, we need to handle patches differently
             if is_patch:
                 # We need to create ROIs with the proper offset in the original image
-                patch_x, patch_y = patch_info
+                patch_x, patch_y, _, _ = patch_info
             else:
                 patch_x, patch_y = 0, 0
                 

@@ -36,7 +36,7 @@ docker build -t omero-ipynb .
 
 For Windows (after starting VcXsrv with "Disable access control" checked):
 ```powershell
-docker run -p 8888:8888 -v ${PWD}/data:/home/jovyan/data -v ${PWD}/notebooks:/home/jovyan/notebooks -v ${PWD}/microsam:/home/jovyan/microsam -e DISPLAY=host.docker.internal:0 omero-ipynb 
+docker run -p 8888:8888 -v ${PWD}/data:/home/jovyan/data -v ${PWD}/notebooks:/home/jovyan/notebooks -v ${PWD}/microsam:/home/jovyan/microsam -e DISPLAY=host.docker.internal:0 --gpus=all  omero-ipynb 
 ```
 
 Open the Jupyter URL that appears in the console output.

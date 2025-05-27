@@ -24,7 +24,7 @@ from .file_io_functions import (
     organize_local_outputs,
     save_annotations_schema
 )
-from .processing_pipeline import process_omero_batch_with_dask
+from .processing_pipeline import process_omero_batch
 
 __all__ = [
     'NumpyEncoder', 
@@ -44,5 +44,5 @@ __all__ = [
     'cleanup_local_embeddings',
     'organize_local_outputs',
     'save_annotations_schema',
-    'process_omero_batch_with_dask'
+    'process_omero_batch'
 ]
