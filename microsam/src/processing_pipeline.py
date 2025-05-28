@@ -47,7 +47,8 @@ def process_omero_batch(
     random_patches: bool = True,
     resume_from_table: bool = False,
     read_only_mode: bool = False,
-    local_output_dir: str = "./omero_annotations"
+    local_output_dir: str = "./omero_annotations",
+    trainingset_name: str = None
 ):
     """
     Process OMERO images in batches for SAM segmentation using dask for lazy loading
@@ -107,18 +108,21 @@ def process_omero_batch(
     ])
     
     table_id = None
-    
-    # Check if we should resume from an existing table
+      # Check if we should resume from an existing table
     if resume_from_table:
         try:
             # Get existing tracking table
             existing_tables = ezomero.get_table_names(conn, container_type.capitalize(), container_id)
-            if "micro_sam_training_data" in existing_tables:
+            
+            # Determine table name to look for based on trainingset_name
+            table_name_to_find = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
+            
+            if table_name_to_find in existing_tables:
                 # Get the table ID and data
                 table_ids = ezomero.get_table_ids(conn, container_type.capitalize(), container_id)
                 for tid in table_ids:
                     table_name = ezomero.get_table_names(conn, container_type.capitalize(), container_id, tid)
-                    if table_name == "micro_sam_training_data":
+                    if table_name == table_name_to_find:
                         table_id = tid
                         existing_df = ezomero.get_table(conn, table_id)
                         
@@ -497,8 +501,7 @@ def process_omero_batch(
                 patch_x, patch_y, _, _ = patch_info
             else:
                 patch_x, patch_y = 0, 0
-                
-            # Upload labels and create ROIs - handle 3D and patches
+                  # Upload labels and create ROIs - handle 3D and patches
             if three_d:
                 # For 3D data, handle z-dimension correctly
                 z_for_roi = range(image.getSizeZ())
@@ -513,7 +516,8 @@ def process_omero_batch(
                     is_volumetric=True,
                     patch_offset=(patch_x, patch_y) if is_patch else None,
                     read_only_mode=read_only_mode,
-                    local_output_dir=local_output_dir
+                    local_output_dir=local_output_dir,
+                    trainingset_name=trainingset_name
                 )
             else:
                 # For 2D data - with potential patch offset
@@ -528,7 +532,8 @@ def process_omero_batch(
                     is_volumetric=False,
                     patch_offset=(patch_x, patch_y) if is_patch else None,
                     read_only_mode=read_only_mode,
-                    local_output_dir=local_output_dir
+                    local_output_dir=local_output_dir,
+                    trainingset_name=trainingset_name
                 )
             
             # Update tracking dataframe
@@ -586,16 +591,14 @@ def process_omero_batch(
         for col in id_columns_to_convert:
             if col in df_for_omero.columns: # Ensure column exists
                 # Convert to string, handling potential float NaNs first if necessary
-                df_for_omero[col] = df_for_omero[col].astype(str)
-
-
-        # Create a new table with the updated data
+                df_for_omero[col] = df_for_omero[col].astype(str)        # Create a new table with the updated data
+        table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
         table_id = ezomero.post_table(
             conn, 
             object_type=container_type.capitalize(), 
             object_id=container_id, 
             table=df_for_omero, # Use the converted DataFrame
-            title="micro_sam_training_data"
+            title=table_title
         )
         if table_id is None:
             print("Warning: Failed to create tracking table")

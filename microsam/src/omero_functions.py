@@ -246,7 +246,8 @@ def get_dask_image(conn, image_id, z_slice=None, timepoint=None, channel=None, t
 
 
 def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint, model_type, 
-                          is_volumetric=False, patch_offset=None, read_only_mode=False, local_output_dir="./omero_annotations"):
+                          is_volumetric=False, patch_offset=None, read_only_mode=False, local_output_dir="./omero_annotations",
+                          trainingset_name=None):
     """
     Upload both label map and ROIs for a segmented image or save them locally in read-only mode
     
@@ -262,6 +263,7 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         patch_offset: Optional (x,y) offset for placing ROIs in a larger image
         read_only_mode: If True, save annotations locally instead of uploading to OMERO
         local_output_dir: Directory to save local annotations when in read-only mode
+        trainingset_name: Optional name for the training set (used in naming ROIs and annotations)
     
     Returns:
         tuple: (label_id, roi_id) or (local_label_path, local_roi_path) in read-only mode
@@ -283,7 +285,13 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         
         # Create local directories
         image_id = image.getId()
-        image_dir = os.path.join(local_output_dir, f"image_{image_id}")
+        
+        # Include trainingset_name in directory structure if provided
+        if trainingset_name:
+            image_dir = os.path.join(local_output_dir, trainingset_name, f"image_{image_id}")
+        else:
+            image_dir = os.path.join(local_output_dir, f"image_{image_id}")
+            
         os.makedirs(image_dir, exist_ok=True)
         
         # Save label image file
@@ -318,6 +326,11 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         return local_label_path, local_roi_path
     else:
         # Normal OMERO upload mode
+        # Create label name with trainingset_name if provided
+        label_desc = f'SAM {"volumetric" if is_volumetric else "manual"} segmentation ({model_type}){patch_desc}'
+        if trainingset_name:
+            label_desc = f'{trainingset_name} - {label_desc}'
+            
         # Upload label map as attachment
         label_id = ezomero.post_file_annotation(
             conn,
@@ -325,16 +338,24 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
             ns='microsam.labelimage',
             object_type="Image",
             object_id=image.getId(),
-            description=f'SAM {"volumetric" if is_volumetric else "manual"} segmentation ({model_type}){patch_desc}'
+            description=label_desc
         )
         
         if shapes:  # Only create ROI if shapes were found
+            # Create ROI name with trainingset_name if provided
+            roi_name = f'SAM_{model_type}{"_3D" if is_volumetric else ""}{patch_desc}'
+            roi_desc = f'micro_sam.{"volumetric" if is_volumetric else "manual"}_instance_segmentation.{model_type}{patch_desc}'
+            
+            if trainingset_name:
+                roi_name = f'{trainingset_name}_{roi_name}'
+                roi_desc = f'{trainingset_name} - {roi_desc}'
+                
             roi_id = ezomero.post_roi(
                 conn,
                 image.getId(),
                 shapes,
-                name=f'SAM_{model_type}{"_3D" if is_volumetric else ""}{patch_desc}',
-                description=f'micro_sam.{"volumetric" if is_volumetric else "manual"}_instance_segmentation.{model_type}{patch_desc}'
+                name=roi_name,
+                description=roi_desc
             )
         else:
             roi_id = None
