@@ -460,61 +460,87 @@ def initialize_tracking_table(
                     "image_name": img.getName(),
                     "train": is_train,
                     "validate": is_validate,
-                    "channel": channel,  # Preset if provided
-                    "z_slice": None,  # Will be set during processing
-                    "timepoint": None,  # Will be set during processing
-                    "sam_model": model_type,  # Preset if provided
-                    "embed_id": None,
-                    "label_id": None,
-                    "roi_id": None,
-                    "is_volumetric": three_d,  # Preset based on parameter
-                    "processed": False,
-                    "is_patch": True,
-                    "patch_x": x,
-                    "patch_y": y,
-                    "patch_width": width,
-                    "patch_height": height,
-                    "schema_attachment_id": None
+                    "channel": int(channel) if channel is not None else -1,  # Ensure integer type
+                    "z_slice": -1,  # Using -1 as placeholder instead of None for consistent int type
+                    "timepoint": -1,  # Using -1 as placeholder instead of None for consistent int type
+                    "sam_model": model_type if model_type is not None else "",  # String type
+                    "embed_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "label_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "roi_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "is_volumetric": three_d,  # Boolean type
+                    "processed": False,  # Boolean type
+                    "is_patch": True,  # Boolean type
+                    "patch_x": x,  # Integer type
+                    "patch_y": y,  # Integer type
+                    "patch_width": width,  # Integer type
+                    "patch_height": height,  # Integer type
+                    "schema_attachment_id": -1  # Using -1 as placeholder for numeric IDs
                 }])
                 df = pd.concat([df, new_row], ignore_index=True)
         else:
-            # Create row for full image
+            # Create row for full image with consistent types
             new_row = pd.DataFrame([{
                 "image_id": img_id,
                 "image_name": img.getName(),
                 "train": is_train,
                 "validate": is_validate,
-                "channel": channel,  # Preset if provided
-                "z_slice": None,  # Will be set during processing
-                "timepoint": None,  # Will be set during processing
-                "sam_model": model_type,  # Preset if provided
-                "embed_id": None,
-                "label_id": None,
-                "roi_id": None,
-                "is_volumetric": three_d,  # Preset based on parameter
-                "processed": False,
-                "is_patch": False,
-                "patch_x": 0,
-                "patch_y": 0,
-                "patch_width": img.getSizeX(),
-                "patch_height": img.getSizeY(),
-                "schema_attachment_id": None
+                "channel": int(channel) if channel is not None else -1,  # Ensure integer type
+                "z_slice": -1,  # Using -1 as placeholder instead of None for consistent int type
+                "timepoint": -1,  # Using -1 as placeholder instead of None for consistent int type
+                "sam_model": model_type if model_type is not None else "",  # String type
+                "embed_id": -1,  # Using -1 as placeholder for numeric IDs
+                "label_id": -1,  # Using -1 as placeholder for numeric IDs
+                "roi_id": -1,  # Using -1 as placeholder for numeric IDs
+                "is_volumetric": three_d,  # Boolean type
+                "processed": False,  # Boolean type
+                "is_patch": False,  # Boolean type 
+                "patch_x": 0,  # Integer type
+                "patch_y": 0,  # Integer type
+                "patch_width": img.getSizeX(),  # Integer type
+                "patch_height": img.getSizeY(),  # Integer type
+                "schema_attachment_id": -1  # Using -1 as placeholder for numeric IDs
             }])
             df = pd.concat([df, new_row], ignore_index=True)
-      # Store container info in the DataFrame for reference
+
+    # Store container info in the DataFrame for reference
     df.attrs['container_type'] = container_type
     df.attrs['container_id'] = container_id
-      # Generate and store the table title - make sure it's saved in the DataFrame attributes
+    
+    # Generate and store the table title - make sure it's saved in the DataFrame attributes
     # This is critical for the update_tracking_table_rows function to work properly
     table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
     df.attrs['table_title'] = table_title
     print(f"Using table title: {table_title}")
     
-    # Prepare DataFrame for OMERO table: Convert potentially None/NaN ID columns to string
+    # Prepare DataFrame for OMERO table: ensure consistent typing
     df_for_omero = df.copy()
+    
+    # First ensure numeric columns have proper and consistent types
+    numeric_columns = ['image_id', 'patch_x', 'patch_y', 'patch_width', 'patch_height', 'z_slice', 'timepoint']
+    for col in numeric_columns:
+        if col in df_for_omero.columns:
+            # Convert to integer type explicitly to ensure consistent typing
+            try:
+                # Convert to numeric with coercion
+                numeric_series = pd.to_numeric(df_for_omero[col], errors='coerce')
+                # Then fill any NAs and convert to integers
+                df_for_omero[col] = numeric_series.fillna(-1).astype(int)
+            except Exception:
+                print(f"Warning: Could not convert column '{col}' to numeric. Setting to -1.")
+                df_for_omero[col] = -1
+    
+    # Boolean columns need to be boolean type
+    boolean_columns = ['train', 'validate', 'processed', 'is_patch', 'is_volumetric']
+    for col in boolean_columns:
+        if col in df_for_omero.columns:
+            df_for_omero[col] = df_for_omero[col].fillna(False).astype(bool)
+            
+    # Then convert ID columns to string, handling None values properly
     id_columns = ['embed_id', 'label_id', 'roi_id', 'schema_attachment_id']
     for col in id_columns:
-        df_for_omero[col] = df_for_omero[col].astype(str)
+        if col in df_for_omero.columns:
+            # Replace NaN/None with 'None' string then convert all to string
+            df_for_omero[col] = df_for_omero[col].fillna('None').astype(str)
     
     # Create the table
     table_id = ezomero.post_table(
@@ -546,6 +572,7 @@ def update_tracking_table_rows(conn, table_id, df, updated_indices, updated_valu
         tuple: (new_table_id, updated_df) - ID of the updated table and updated DataFrame
     """
     import ezomero
+    import pandas as pd
     
     # Update the rows in our DataFrame
     for idx, row_data in zip(updated_indices, updated_values):
@@ -582,38 +609,48 @@ def update_tracking_table_rows(conn, table_id, df, updated_indices, updated_valu
     
     # Get table title (use the stored title or default)
     table_title = df.attrs.get('table_title', "micro_sam_training_data")
-      # Prepare DataFrame for OMERO: Handle all columns properly
-    df_for_omero = df.copy()
     
-    # First ensure numeric columns have proper types
-    numeric_columns = ['image_id', 'patch_x', 'patch_y', 'patch_width', 'patch_height']
+    # Prepare DataFrame for OMERO: Handle all columns properly
+    df_for_omero = df.copy()
+      
+    # First ensure numeric columns have proper and consistent types
+    numeric_columns = ['image_id', 'patch_x', 'patch_y', 'patch_width', 'patch_height', 'z_slice', 'timepoint']
     for col in numeric_columns:
         if col in df_for_omero.columns:
-            df_for_omero[col] = pd.to_numeric(df_for_omero[col], errors='ignore')
+            # Convert to integer type explicitly to ensure consistent typing
+            try:
+                # Convert to numeric with coercion
+                numeric_series = pd.to_numeric(df_for_omero[col], errors='coerce')
+                # Then fill any NAs and convert to integers
+                df_for_omero[col] = numeric_series.fillna(-1).astype(int)
+            except Exception:
+                print(f"Warning: Could not convert column '{col}' to numeric. Setting to -1.")
+                df_for_omero[col] = -1
+    
+    # Boolean columns need to be boolean type
+    boolean_columns = ['train', 'validate', 'processed', 'is_patch', 'is_volumetric']
+    for col in boolean_columns:
+        if col in df_for_omero.columns:
+            df_for_omero[col] = df_for_omero[col].fillna(False).astype(bool)
     
     # Then convert ID columns to string, handling None values properly
     id_columns = ['embed_id', 'label_id', 'roi_id', 'schema_attachment_id']
     for col in id_columns:
         if col in df_for_omero.columns:
-            # First convert valid numbers to integers where possible
-            for idx in range(len(df_for_omero)):
-                val = df_for_omero.at[idx, col]
-                if pd.notna(val) and val not in ('', 'None', 'nan'):
-                    try:
-                        df_for_omero.at[idx, col] = int(float(val))
-                    except (ValueError, TypeError):
-                        pass  # Keep the original value
-            
-            # Then convert everything to strings for OMERO
-            df_for_omero[col] = df_for_omero[col].fillna('None')
-            df_for_omero[col] = df_for_omero[col].astype(str)
+            # Replace NaN/None with 'None' string then convert all to string
+            df_for_omero[col] = df_for_omero[col].fillna('None').astype(str)
     
     # Try to delete the existing table
     try:
+        print(f"Attempting to delete existing table with ID: {table_id}")
         conn.deleteObjects("FileAnnotation", [table_id], wait=True)
         print(f"Deleted existing table with ID: {table_id}")
     except Exception as e:
         print(f"Warning: Could not delete existing table: {e}")
+        # If we can't delete the table, try with a new title to avoid conflicts
+        if "cannot read all the specified objects" in str(e):
+            table_title = f"{table_title}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+            print(f"Using alternative table title: {table_title}")
     
     # Create a new table with the updated data
     try:
@@ -631,3 +668,55 @@ def update_tracking_table_rows(conn, table_id, df, updated_indices, updated_valu
     except Exception as e:
         print(f"Error creating updated table: {e}")
         return table_id, df  # Return original values on error
+
+
+def get_table_by_name(conn, obj_type, obj_id, table_title):
+    """
+    Get table annotation attached to an object by name.
+    
+    Parameters:
+        conn: OMERO connection
+        obj_type: Type of object ('Dataset', 'Project', etc.)
+        obj_id: ID of object
+        table_title: Name of the table to find
+        
+    Returns:
+        tuple: (table_id, table_df) or (None, None) if not found
+    """
+    import ezomero
+    import pandas as pd
+    
+    obj = conn.getObject(obj_type, obj_id)
+    if not obj:
+        print(f"Object {obj_type} with ID {obj_id} not found")
+        return None, None
+    
+    # Get all file annotations
+    file_ann_ids = ezomero.get_file_annotation_ids(conn, obj_type, obj_id)
+    print(f"Found {len(file_ann_ids)} file annotations on {obj_type} {obj_id}")
+    
+    # Check each annotation to see if it's a table with the right name
+    for ann_id in file_ann_ids:
+        try:
+            # Get the actual annotation object
+            ann = conn.getObject("FileAnnotation", ann_id)
+            if ann is None:
+                continue
+                
+            filename = ann.getFileName()
+                            
+            # Check if the filename contains our table title
+            if table_title in filename:
+                # Try to open it as a table
+                try:
+                    table_df = ezomero.get_table(conn, ann_id)
+                    if isinstance(table_df, pd.DataFrame):
+                        print(f"Found matching table: {filename} (ID: {ann_id})")
+                        return ann_id, table_df
+                except Exception as e:
+                    print(f"Could not read table from annotation {ann_id}: {e}")
+        except Exception as e:
+            print(f"Error processing annotation {ann_id}: {e}")
+    
+    print(f"No table found with title '{table_title}'")
+    return None, None

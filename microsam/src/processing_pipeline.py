@@ -23,7 +23,8 @@ from .file_io_functions import (
 from .omero_functions import (
     upload_rois_and_labels,
     initialize_tracking_table,
-    update_tracking_table_rows
+    update_tracking_table_rows,
+    get_table_by_name
 )
 
 
@@ -101,40 +102,28 @@ def process_omero_batch(
         if os.path.exists(path):
             shutil.rmtree(path)
         os.makedirs(path)
-        
-    # Table parameters
+          # Table parameters
     table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
     
     # Check if we should resume from existing table or create a new one
     if resume_from_table:
         try:
-            # Get existing tracking table
-            existing_tables = ezomero.get_table_names(conn, container_type.capitalize(), container_id)
+            # Get existing tracking table using our helper function
+            table_id, df = get_table_by_name(
+                conn, 
+                container_type.capitalize(), 
+                container_id, 
+                table_title
+            )
             
-            if table_title in existing_tables:
-                # Get the table ID and data
-                table_ids = ezomero.get_table_ids(conn, container_type.capitalize(), container_id)
-                table_id = None
-                df = None
+            if table_id is not None and df is not None:
+                # Store table metadata
+                df.attrs['container_type'] = container_type
+                df.attrs['container_id'] = container_id
+                df.attrs['table_title'] = table_title
                 
-                for tid in table_ids:
-                    table_name = ezomero.get_table_names(conn, container_type.capitalize(), container_id, tid)
-                    if table_name == table_title:
-                        table_id = tid
-                        df = ezomero.get_table(conn, table_id)
-                        
-                        # Store table metadata
-                        df.attrs['container_type'] = container_type
-                        df.attrs['container_id'] = container_id
-                        df.attrs['table_title'] = table_title
-                        
-                        print(f"Resuming from existing table ID: {table_id}")
-                        print(f"Found {len(df)} previously tracked images/patches")
-                        break
-                
-                if table_id is None or df is None:
-                    print("Could not find the expected table, creating a new one")
-                    resume_from_table = False
+                print(f"Resuming from existing table ID: {table_id}")
+                print(f"Found {len(df)} previously tracked images/patches")
             else:
                 print(f"Table '{table_title}' not found, creating a new one")
                 resume_from_table = False
