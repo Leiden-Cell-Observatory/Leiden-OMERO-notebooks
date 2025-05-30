@@ -14,7 +14,8 @@ from .omero_functions import (
     print_object_details, 
     get_images_from_container, 
     get_dask_image, 
-    upload_rois_and_labels
+    upload_rois_and_labels,
+    get_table_by_name
 )
 from .file_io_functions import (
     zip_directory,
@@ -33,11 +34,11 @@ __all__ = [
     'process_label_plane', 
     'label_to_rois', 
     'generate_patch_coordinates', 
-    'extract_patch',
-    'print_object_details', 
+    'extract_patch',    'print_object_details', 
     'get_images_from_container', 
     'get_dask_image', 
     'upload_rois_and_labels',
+    'get_table_by_name',
     'zip_directory',
     'store_annotations_in_zarr',
     'zarr_to_tiff',

@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
     # Example usage:
     dataset_id = 1112  # Replace with your dataset ID
-    table_pattern = "Nuclei_measurements"  # Optional: specify pattern to match table names
+    table_pattern = ""  # Optional: specify pattern to match table names
     
     # Remove tables
     remove_tables_from_dataset_images(conn, dataset_id, table_pattern)
