@@ -20,7 +20,12 @@ from .file_io_functions import (
     zarr_to_tiff,
     cleanup_local_embeddings
 )
-from .omero_functions import upload_rois_and_labels
+from .omero_functions import (
+    upload_rois_and_labels,
+    initialize_tracking_table,
+    update_tracking_table_rows,
+    get_table_by_name
+)
 
 
 def process_omero_batch(
@@ -47,7 +52,8 @@ def process_omero_batch(
     random_patches: bool = True,
     resume_from_table: bool = False,
     read_only_mode: bool = False,
-    local_output_dir: str = "./omero_annotations"
+    local_output_dir: str = "./omero_annotations",
+    trainingset_name: str = None
 ):
     """
     Process OMERO images in batches for SAM segmentation using dask for lazy loading
@@ -88,8 +94,7 @@ def process_omero_batch(
     output_path = os.path.join(output_folder, "output")
     embed_path = os.path.join(output_folder, "embed")
     zarr_path = os.path.join(output_folder, "zarr")
-    
-    # Check for and clean up any existing embeddings from interrupted runs
+      # Check for and clean up any existing embeddings from interrupted runs
     cleanup_local_embeddings(output_folder)
     
     # Remove directories if they exist
@@ -97,140 +102,127 @@ def process_omero_batch(
         if os.path.exists(path):
             shutil.rmtree(path)
         os.makedirs(path)
-        
-    # Create or retrieve tracking DataFrame with additional columns for the new features
-    df = pd.DataFrame(columns=[
-        "image_id", "image_name", "train", "validate", 
-        "channel", "z_slice", "timepoint", "sam_model", "embed_id", "label_id", "roi_id", 
-        "is_volumetric", "processed", "is_patch", "patch_x", "patch_y", "patch_width", "patch_height",
-        "schema_attachment_id"  # New column for schema attachment
-    ])
+          # Table parameters
+    table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
     
-    table_id = None
-    
-    # Check if we should resume from an existing table
+    # Check if we should resume from existing table or create a new one
     if resume_from_table:
         try:
-            # Get existing tracking table
-            existing_tables = ezomero.get_table_names(conn, container_type.capitalize(), container_id)
-            if "micro_sam_training_data" in existing_tables:
-                # Get the table ID and data
-                table_ids = ezomero.get_table_ids(conn, container_type.capitalize(), container_id)
-                for tid in table_ids:
-                    table_name = ezomero.get_table_names(conn, container_type.capitalize(), container_id, tid)
-                    if table_name == "micro_sam_training_data":
-                        table_id = tid
-                        existing_df = ezomero.get_table(conn, table_id)
-                        
-                        # Add any missing columns (for backward compatibility)
-                        for col in df.columns:
-                            if col not in existing_df.columns:
-                                existing_df[col] = None
-                        
-                        # Ensure schema_attachment_id column exists if resuming
-                        if 'schema_attachment_id' not in existing_df.columns:
-                            existing_df['schema_attachment_id'] = None
-                                
-                        df = existing_df
-                        
-                        print(f"Resuming from existing table ID: {table_id}")
-                        print(f"Found {len(df)} previously processed images/patches")
-                        break
+            # Get existing tracking table using our helper function
+            table_id, df = get_table_by_name(
+                conn, 
+                container_type.capitalize(), 
+                container_id, 
+                table_title
+            )
+            
+            if table_id is not None and df is not None:
+                # Store table metadata
+                df.attrs['container_type'] = container_type
+                df.attrs['container_id'] = container_id
+                df.attrs['table_title'] = table_title
+                
+                print(f"Resuming from existing table ID: {table_id}")
+                print(f"Found {len(df)} previously tracked images/patches")
+            else:
+                print(f"Table '{table_title}' not found, creating a new one")
+                resume_from_table = False
+                
         except Exception as e:
-            print(f"Error retrieving existing table: {e}. Starting fresh.")
+            print(f"Error retrieving existing table: {e}. Creating a new one.")
             resume_from_table = False
     
-    # Get images list (already provided as argument)
-    combined_images_sequence = np.zeros(len(images_list))  # Initialize sequence array
-    
-    # Select images based on segment_all flag
-    if segment_all:
-        combined_images = images_list
-        combined_images_sequence = np.zeros(len(combined_images))  # All treated as training
-    else:
-        # Check if we have enough images
-        if len(images_list) < train_n + validate_n:
-            print("Not enough images in container for training and validation")
-            raise ValueError(f"Need at least {train_n + validate_n} images but found {len(images_list)}")
-            
-        # Select random images for training and validation
-        train_indices = np.random.choice(len(images_list), train_n, replace=False)
-        train_images = [images_list[i] for i in train_indices]
+    # If not resuming or no table found, create a new complete tracking table
+    if not resume_from_table:
+        # Get images list (already provided as argument)
+        combined_images_sequence = np.zeros(len(images_list))  # Initialize sequence array
         
-        # Get validation images from the remaining ones
-        validate_candidates = [img for i, img in enumerate(images_list) if i not in train_indices]
-        validate_images = np.random.choice(validate_candidates, validate_n, replace=False)
+        # Select images based on segment_all flag
+        if segment_all:
+            combined_images = images_list
+            combined_images_sequence = np.zeros(len(combined_images))  # All treated as training
+        else:
+            # Check if we have enough images
+            if len(images_list) < train_n + validate_n:
+                print("Not enough images in container for training and validation")
+                raise ValueError(f"Need at least {train_n + validate_n} images but found {len(images_list)}")
+                
+            # Select random images for training and validation
+            train_indices = np.random.choice(len(images_list), train_n, replace=False)
+            train_images = [images_list[i] for i in train_indices]
+            
+            # Get validation images from the remaining ones
+            validate_candidates = [img for i, img in enumerate(images_list) if i not in train_indices]
+            validate_images = np.random.choice(validate_candidates, validate_n, replace=False)
+            
+            # Interleave the arrays and create sequence markers
+            combined_images, combined_images_sequence = interleave_arrays(train_images, validate_images)
         
-        # Interleave the arrays and create sequence markers
-        combined_images, combined_images_sequence = interleave_arrays(train_images, validate_images)
-    
-    # If resuming, filter out already processed images/patches
-    processing_units = []  # Will contain tuples of (image, sequence_val, [metadata])
-    
-    if resume_from_table and len(df) > 0:
-        # For patch mode, we need to check image_id + patch coordinates
-        if use_patches:
-            # Get list of already processed image+patch combinations
-            processed_patches = set()
-            for _, row in df[df['processed'] == True].iterrows():
-                patch_key = (row['image_id'], row.get('patch_x', 0), row.get('patch_y', 0), 
-                             row.get('patch_width', 0), row.get('patch_height', 0))
-                processed_patches.add(patch_key)
-            
-            # Generate all possible patches
-            for i, img in enumerate(combined_images):
-                img_id = img.getId()
-                seq_val = combined_images_sequence[i]
-                
-                # Get image dimensions
-                size_x = img.getSizeX()
-                size_y = img.getSizeY()
-                
-                # Generate patches for this image
-                img_patches = generate_patch_coordinates(
-                    size_x, size_y, patch_size, patches_per_image, random_patches)
-                
-                # Filter out already processed patches
-                for patch in img_patches:
-                    patch_key = (img_id, patch[0], patch[1], patch[2], patch[3])
-                    if patch_key not in processed_patches:
-                        processing_units.append((img, seq_val, patch))
-                        
-            print(f"Found {len(processing_units)} remaining patches to process")
-            
-        else:
-            # Get list of already processed image IDs
-            processed_ids = set(df[df['processed'] == True]['image_id'].values)
-            
-            # Filter combined_images
-            for i, img in enumerate(combined_images):
-                if img.getId() not in processed_ids:
-                    processing_units.append((img, combined_images_sequence[i], None))
-            
-            print(f"Found {len(processing_units)} remaining images to process")
+        # Initialize the complete tracking table with all planned processing units
+        print("Creating complete tracking table with all planned images/patches...")
+        table_id, df = initialize_tracking_table(
+            conn, 
+            combined_images, 
+            container_type, 
+            container_id, 
+            segment_all=segment_all, 
+            train_n=train_n, 
+            validate_n=validate_n,
+            use_patches=use_patches, 
+            patch_size=patch_size, 
+            patches_per_image=patches_per_image, 
+            random_patches=random_patches,
+            model_type=model_type,
+            channel=channel,
+            three_d=three_d,
+            trainingset_name=trainingset_name
+        )
     else:
-        # Not resuming, generate all processing units
-        if use_patches:
-            # Generate patches for all images
-            for i, img in enumerate(combined_images):
-                seq_val = combined_images_sequence[i]
+        # When resuming, we need to rebuild combined_images and sequence arrays
+        combined_images = []
+        combined_images_sequence = []
+        
+        # Get unique images from the table
+        unique_image_ids = df['image_id'].unique()
+        for img_id in unique_image_ids:
+            img = conn.getObject("Image", img_id)
+            if img:
+                rows = df[df['image_id'] == img_id]
+                # Use train flag to determine sequence value
+                seq_val = 0 if rows.iloc[0]['train'] else 1
+                combined_images.append(img)
+                combined_images_sequence.append(seq_val)
+        
+        combined_images_sequence = np.array(combined_images_sequence)
+        
+    # Build processing units from unprocessed rows in tracking table
+    processing_units = []  # Will contain tuples of (image, sequence_val, [metadata], row_index)
+    
+    for idx, row in df.iterrows():
+        if row['processed'] != True:  # Process any rows that aren't marked as processed
+            img_id = int(row['image_id'])
+            image = conn.getObject("Image", img_id)
+            
+            if image:
+                seq_val = 0 if row['train'] else 1
                 
-                # Get image dimensions
-                size_x = img.getSizeX()
-                size_y = img.getSizeY()
-                
-                # Generate patches for this image
-                img_patches = generate_patch_coordinates(
-                    size_x, size_y, patch_size, patches_per_image, random_patches)
-                
-                for patch in img_patches:
-                    processing_units.append((img, seq_val, patch))
-                    
-            print(f"Generated {len(processing_units)} patches to process")
-        else:
-            # Use full images
-            for i, img in enumerate(combined_images):
-                processing_units.append((img, combined_images_sequence[i], None))
+                if row['is_patch']:
+                    # Extract patch coordinates
+                    patch = (
+                        int(row['patch_x']), 
+                        int(row['patch_y']), 
+                        int(row['patch_width']), 
+                        int(row['patch_height'])
+                    )
+                    processing_units.append((image, seq_val, patch, idx))
+                else:
+                    processing_units.append((image, seq_val, None, idx))
+            else:
+                print(f"Warning: Could not find image with ID {img_id}, skipping")
+    
+    if len(processing_units) == 0:
+        print("No unprocessed images/patches found in tracking table.")
+        return table_id, combined_images
     
     # Calculate total number of batches
     total_batches = (len(processing_units) + batch_size - 1) // batch_size
@@ -249,13 +241,12 @@ def process_omero_batch(
         start_idx = batch_idx * batch_size
         end_idx = min((batch_idx + 1) * batch_size, len(processing_units))
         batch_units = processing_units[start_idx:end_idx]
-        
-        # Load batch images as dask arrays for lazy loading
+          # Load batch images as dask arrays for lazy loading
         images = []
         dask_images = []
         image_data = []  # Store metadata about each image/patch
         
-        for unit_idx, (image, seq_val, patch) in enumerate(batch_units):
+        for unit_idx, (image, seq_val, patch, row_idx) in enumerate(batch_units):
             image_id = image.getId()
             
             # Determine which timepoint to use
@@ -386,10 +377,12 @@ def process_omero_batch(
             output_folder=os.path.join(output_folder, "output"),
             is_volumetric=three_d
         )
-        
+
         # Start the napari application - this blocks until the viewer is closed
         try:
-            napari.run()
+            #napari.run()
+            get_settings().application.ipy_interactive = True
+            viewer.show(block=True)
             print("Napari viewer closed.")
         except KeyboardInterrupt:
             print("Napari viewer was interrupted. Processing results anyway...")
@@ -497,8 +490,7 @@ def process_omero_batch(
                 patch_x, patch_y, _, _ = patch_info
             else:
                 patch_x, patch_y = 0, 0
-                
-            # Upload labels and create ROIs - handle 3D and patches
+                  # Upload labels and create ROIs - handle 3D and patches
             if three_d:
                 # For 3D data, handle z-dimension correctly
                 z_for_roi = range(image.getSizeZ())
@@ -513,7 +505,8 @@ def process_omero_batch(
                     is_volumetric=True,
                     patch_offset=(patch_x, patch_y) if is_patch else None,
                     read_only_mode=read_only_mode,
-                    local_output_dir=local_output_dir
+                    local_output_dir=local_output_dir,
+                    trainingset_name=trainingset_name
                 )
             else:
                 # For 2D data - with potential patch offset
@@ -528,7 +521,8 @@ def process_omero_batch(
                     is_volumetric=False,
                     patch_offset=(patch_x, patch_y) if is_patch else None,
                     read_only_mode=read_only_mode,
-                    local_output_dir=local_output_dir
+                    local_output_dir=local_output_dir,
+                    trainingset_name=trainingset_name
                 )
             
             # Update tracking dataframe
@@ -559,48 +553,32 @@ def process_omero_batch(
                 "patch_height": unit_data.get('patch_height', 0)
             }])
             batch_df = pd.concat([batch_df, new_row], ignore_index=True)
+          # Update the tracking table with batch results
+        updated_indices = []
+        updated_values = []
         
-        # Update the main DataFrame with the batch results
-        df = pd.concat([df, batch_df], ignore_index=True)
+        for i, row in batch_df.iterrows():
+            # Get the original index from processing_units
+            orig_idx = processing_units[start_idx + i][3] if start_idx + i < len(processing_units) else None
+            
+            if orig_idx is not None:
+                updated_indices.append(orig_idx)
+                updated_values.append(row.to_dict())
+            else:
+                print(f"Warning: Could not find original index for batch row {i}")
         
-        # Upload batch tracking table to OMERO
-        if table_id is not None:
-            # Delete the existing table before creating a new one
-            try:
-                print(f"Deleting existing table with ID: {table_id}")
-                # Get the file annotation object for the table
-                ann = conn.getObject("FileAnnotation", table_id)
-                if ann:
-                    # Delete the file annotation (which contains the table)
-                    conn.deleteObjects("FileAnnotation", [table_id], wait=True)
-                    print(f"Existing table deleted successfully")
-                else:
-                    print(f"Warning: Could not find table with ID: {table_id}")
-            except Exception as e:
-                print(f"Warning: Could not delete existing table: {e}")
-                # Continue anyway, as we'll create a new table
-        
-        # Prepare DataFrame for OMERO table: Convert potentially None/NaN ID columns to string
-        df_for_omero = df.copy()
-        id_columns_to_convert = ['embed_id', 'label_id', 'roi_id', 'schema_attachment_id']
-        for col in id_columns_to_convert:
-            if col in df_for_omero.columns: # Ensure column exists
-                # Convert to string, handling potential float NaNs first if necessary
-                df_for_omero[col] = df_for_omero[col].astype(str)
-
-
-        # Create a new table with the updated data
-        table_id = ezomero.post_table(
-            conn, 
-            object_type=container_type.capitalize(), 
-            object_id=container_id, 
-            table=df_for_omero, # Use the converted DataFrame
-            title="micro_sam_training_data"
-        )
-        if table_id is None:
-            print("Warning: Failed to create tracking table")
+        # Use our new function to update the table rows
+        if updated_indices and table_id is not None:
+            print(f"Updating tracking table (ID: {table_id}) with {len(updated_indices)} processed rows")
+            table_id, df = update_tracking_table_rows(
+                conn,
+                table_id,
+                df,
+                updated_indices,
+                updated_values
+            )
         else:
-            print(f"Created new tracking table with ID: {table_id}")
+            print("No updates to apply to tracking table")
         
         print(f"Batch {batch_idx+1}/{total_batches} results:")
         print(f"  - Completed: {batch_completed}/{len(batch_units)} units")

@@ -246,7 +246,8 @@ def get_dask_image(conn, image_id, z_slice=None, timepoint=None, channel=None, t
 
 
 def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint, model_type, 
-                          is_volumetric=False, patch_offset=None, read_only_mode=False, local_output_dir="./omero_annotations"):
+                          is_volumetric=False, patch_offset=None, read_only_mode=False, local_output_dir="./omero_annotations",
+                          trainingset_name=None):
     """
     Upload both label map and ROIs for a segmented image or save them locally in read-only mode
     
@@ -262,6 +263,7 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         patch_offset: Optional (x,y) offset for placing ROIs in a larger image
         read_only_mode: If True, save annotations locally instead of uploading to OMERO
         local_output_dir: Directory to save local annotations when in read-only mode
+        trainingset_name: Optional name for the training set (used in naming ROIs and annotations)
     
     Returns:
         tuple: (label_id, roi_id) or (local_label_path, local_roi_path) in read-only mode
@@ -283,7 +285,13 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         
         # Create local directories
         image_id = image.getId()
-        image_dir = os.path.join(local_output_dir, f"image_{image_id}")
+        
+        # Include trainingset_name in directory structure if provided
+        if trainingset_name:
+            image_dir = os.path.join(local_output_dir, trainingset_name, f"image_{image_id}")
+        else:
+            image_dir = os.path.join(local_output_dir, f"image_{image_id}")
+            
         os.makedirs(image_dir, exist_ok=True)
         
         # Save label image file
@@ -318,6 +326,11 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
         return local_label_path, local_roi_path
     else:
         # Normal OMERO upload mode
+        # Create label name with trainingset_name if provided
+        label_desc = f'SAM {"volumetric" if is_volumetric else "manual"} segmentation ({model_type}){patch_desc}'
+        if trainingset_name:
+            label_desc = f'{trainingset_name} - {label_desc}'
+            
         # Upload label map as attachment
         label_id = ezomero.post_file_annotation(
             conn,
@@ -325,18 +338,385 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
             ns='microsam.labelimage',
             object_type="Image",
             object_id=image.getId(),
-            description=f'SAM {"volumetric" if is_volumetric else "manual"} segmentation ({model_type}){patch_desc}'
+            description=label_desc
         )
         
         if shapes:  # Only create ROI if shapes were found
+            # Create ROI name with trainingset_name if provided
+            roi_name = f'SAM_{model_type}{"_3D" if is_volumetric else ""}{patch_desc}'
+            roi_desc = f'micro_sam.{"volumetric" if is_volumetric else "manual"}_instance_segmentation.{model_type}{patch_desc}'
+            
+            if trainingset_name:
+                roi_name = f'{trainingset_name}_{roi_name}'
+                roi_desc = f'{trainingset_name} - {roi_desc}'
+                
             roi_id = ezomero.post_roi(
                 conn,
                 image.getId(),
                 shapes,
-                name=f'SAM_{model_type}{"_3D" if is_volumetric else ""}{patch_desc}',
-                description=f'micro_sam.{"volumetric" if is_volumetric else "manual"}_instance_segmentation.{model_type}{patch_desc}'
+                name=roi_name,
+                description=roi_desc
             )
         else:
             roi_id = None
             
         return label_id, roi_id
+
+
+def initialize_tracking_table(
+    conn, 
+    images_list, 
+    container_type, 
+    container_id, 
+    segment_all=True, 
+    train_n=3, 
+    validate_n=3,
+    use_patches=False, 
+    patch_size=(512, 512), 
+    patches_per_image=1, 
+    random_patches=True,
+    model_type=None,
+    channel=None,
+    three_d=False,
+    trainingset_name=None
+):
+    """
+    Initialize a complete tracking table with rows for all images/patches that will be processed.
+    All rows will be marked as 'processed=False' initially.
+    
+    Args:
+        conn: OMERO connection
+        images_list: List of OMERO image objects
+        container_type: Type of OMERO container ('dataset', 'plate', etc.)
+        container_id: ID of the container
+        segment_all: Whether to include all images in training set
+        train_n: Number of training images if not segment_all
+        validate_n: Number of validation images if not segment_all
+        use_patches: Whether to extract patches instead of using full images
+        patch_size: Size of patches to extract (width, height)
+        patches_per_image: Number of patches to extract per image
+        random_patches: Whether to extract patches randomly or from center
+        model_type: SAM model type to use (for documentation in table)
+        channel: Channel to segment (for documentation in table)
+        three_d: Whether to use 3D volumetric mode
+        trainingset_name: Optional name for the training set
+        
+    Returns:
+        tuple: (table_id, df) - ID of created table and corresponding DataFrame
+    """
+    import ezomero
+    from .image_functions import generate_patch_coordinates
+    from .utils import interleave_arrays
+    import numpy as np
+    import pandas as pd
+    
+    # Create DataFrame to store tracking info
+    df = pd.DataFrame(columns=[
+        "image_id", "image_name", "train", "validate", 
+        "channel", "z_slice", "timepoint", "sam_model", "embed_id", "label_id", "roi_id", 
+        "is_volumetric", "processed", "is_patch", "patch_x", "patch_y", "patch_width", "patch_height",
+        "schema_attachment_id"
+    ])
+    
+    # Determine which images to include based on segment_all flag
+    if segment_all:
+        combined_images = images_list
+        combined_images_sequence = np.zeros(len(combined_images))  # All treated as training
+    else:
+        # Check if we have enough images
+        if len(images_list) < train_n + validate_n:
+            print("Not enough images in container for training and validation")
+            raise ValueError(f"Need at least {train_n + validate_n} images but found {len(images_list)}")
+            
+        # Select random images for training and validation
+        train_indices = np.random.choice(len(images_list), train_n, replace=False)
+        train_images = [images_list[i] for i in train_indices]
+        
+        # Get validation images from the remaining ones
+        validate_candidates = [img for i, img in enumerate(images_list) if i not in train_indices]
+        validate_images = np.random.choice(validate_candidates, validate_n, replace=False)
+        
+        # Interleave the arrays and create sequence markers
+        combined_images, combined_images_sequence = interleave_arrays(train_images, validate_images)
+    
+    # Create rows for each image/patch
+    for i, img in enumerate(combined_images):
+        img_id = img.getId()
+        seq_val = combined_images_sequence[i]
+        is_train = seq_val == 0 if not segment_all else True
+        is_validate = seq_val == 1 if not segment_all else False
+        
+        if use_patches:
+            # Generate patches for this image
+            size_x = img.getSizeX()
+            size_y = img.getSizeY()
+            patches = generate_patch_coordinates(
+                size_x, size_y, patch_size, patches_per_image, random_patches)
+            
+            for patch in patches:
+                x, y, width, height = patch
+                new_row = pd.DataFrame([{
+                    "image_id": img_id,
+                    "image_name": img.getName(),
+                    "train": is_train,
+                    "validate": is_validate,
+                    "channel": int(channel) if channel is not None else -1,  # Ensure integer type
+                    "z_slice": -1,  # Using -1 as placeholder instead of None for consistent int type
+                    "timepoint": -1,  # Using -1 as placeholder instead of None for consistent int type
+                    "sam_model": model_type if model_type is not None else "",  # String type
+                    "embed_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "label_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "roi_id": -1,  # Using -1 as placeholder for numeric IDs
+                    "is_volumetric": three_d,  # Boolean type
+                    "processed": False,  # Boolean type
+                    "is_patch": True,  # Boolean type
+                    "patch_x": x,  # Integer type
+                    "patch_y": y,  # Integer type
+                    "patch_width": width,  # Integer type
+                    "patch_height": height,  # Integer type
+                    "schema_attachment_id": -1  # Using -1 as placeholder for numeric IDs
+                }])
+                df = pd.concat([df, new_row], ignore_index=True)
+        else:
+            # Create row for full image with consistent types
+            new_row = pd.DataFrame([{
+                "image_id": img_id,
+                "image_name": img.getName(),
+                "train": is_train,
+                "validate": is_validate,
+                "channel": int(channel) if channel is not None else -1,  # Ensure integer type
+                "z_slice": -1,  # Using -1 as placeholder instead of None for consistent int type
+                "timepoint": -1,  # Using -1 as placeholder instead of None for consistent int type
+                "sam_model": model_type if model_type is not None else "",  # String type
+                "embed_id": -1,  # Using -1 as placeholder for numeric IDs
+                "label_id": -1,  # Using -1 as placeholder for numeric IDs
+                "roi_id": -1,  # Using -1 as placeholder for numeric IDs
+                "is_volumetric": three_d,  # Boolean type
+                "processed": False,  # Boolean type
+                "is_patch": False,  # Boolean type 
+                "patch_x": 0,  # Integer type
+                "patch_y": 0,  # Integer type
+                "patch_width": img.getSizeX(),  # Integer type
+                "patch_height": img.getSizeY(),  # Integer type
+                "schema_attachment_id": -1  # Using -1 as placeholder for numeric IDs
+            }])
+            df = pd.concat([df, new_row], ignore_index=True)
+
+    # Store container info in the DataFrame for reference
+    df.attrs['container_type'] = container_type
+    df.attrs['container_id'] = container_id
+    
+    # Generate and store the table title - make sure it's saved in the DataFrame attributes
+    # This is critical for the update_tracking_table_rows function to work properly
+    table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
+    df.attrs['table_title'] = table_title
+    print(f"Using table title: {table_title}")
+    
+    # Prepare DataFrame for OMERO table: ensure consistent typing
+    df_for_omero = df.copy()
+    
+    # First ensure numeric columns have proper and consistent types
+    numeric_columns = ['image_id', 'patch_x', 'patch_y', 'patch_width', 'patch_height', 'z_slice', 'timepoint']
+    for col in numeric_columns:
+        if col in df_for_omero.columns:
+            # Convert to integer type explicitly to ensure consistent typing
+            try:
+                # Convert to numeric with coercion
+                numeric_series = pd.to_numeric(df_for_omero[col], errors='coerce')
+                # Then fill any NAs and convert to integers
+                df_for_omero[col] = numeric_series.fillna(-1).astype(int)
+            except Exception:
+                print(f"Warning: Could not convert column '{col}' to numeric. Setting to -1.")
+                df_for_omero[col] = -1
+    
+    # Boolean columns need to be boolean type
+    boolean_columns = ['train', 'validate', 'processed', 'is_patch', 'is_volumetric']
+    for col in boolean_columns:
+        if col in df_for_omero.columns:
+            df_for_omero[col] = df_for_omero[col].fillna(False).astype(bool)
+            
+    # Then convert ID columns to string, handling None values properly
+    id_columns = ['embed_id', 'label_id', 'roi_id', 'schema_attachment_id']
+    for col in id_columns:
+        if col in df_for_omero.columns:
+            # Replace NaN/None with 'None' string then convert all to string
+            df_for_omero[col] = df_for_omero[col].fillna('None').astype(str)
+    
+    # Create the table
+    table_id = ezomero.post_table(
+        conn,
+        object_type=container_type.capitalize(),
+        object_id=container_id,
+        table=df_for_omero,
+        title=table_title
+    )
+    
+    print(f"Created tracking table with {len(df)} rows, ID: {table_id}")
+    
+    return table_id, df
+
+
+def update_tracking_table_rows(conn, table_id, df, updated_indices, updated_values):
+    """
+    Update specific rows in an OMERO table with new values.
+    Simplified implementation: updates DataFrame locally then recreates the table.
+    
+    Args:
+        conn: OMERO connection
+        table_id: ID of the table to update
+        df: Current DataFrame of the complete table
+        updated_indices: List of row indices to update
+        updated_values: List of dictionaries with column values to update
+        
+    Returns:
+        tuple: (new_table_id, updated_df) - ID of the updated table and updated DataFrame
+    """
+    import ezomero
+    import pandas as pd
+    
+    # Update the rows in our DataFrame
+    for idx, row_data in zip(updated_indices, updated_values):
+        if idx >= len(df):
+            print(f"Warning: Index {idx} out of bounds for DataFrame (length {len(df)})")
+            continue
+            
+        for col, val in row_data.items():
+            if col in df.columns:
+                df.at[idx, col] = val
+            else:
+                print(f"Warning: Column '{col}' not found in DataFrame")
+    
+    # Get container info from DataFrame attrs
+    container_type = df.attrs.get('container_type', 'Dataset')
+    container_id = df.attrs.get('container_id', None)
+    
+    if container_id is None:
+        # Try to determine from the existing table data
+        image_id = df.iloc[0].get('image_id') if len(df) > 0 else None
+        if image_id:
+            print(f"Using first image ID ({image_id}) to determine container")
+            obj = conn.getObject("Image", image_id)
+            if obj:
+                parents = list(obj.listParents())
+                if parents:
+                    parent = parents[0]
+                    container_type = parent.__class__.__name__
+                    container_id = parent.getId()
+        
+        if container_id is None:
+            print("Could not determine container ID, cannot recreate table")
+            return table_id, df
+    
+    # Get table title (use the stored title or default)
+    table_title = df.attrs.get('table_title', "micro_sam_training_data")
+    
+    # Prepare DataFrame for OMERO: Handle all columns properly
+    df_for_omero = df.copy()
+      
+    # First ensure numeric columns have proper and consistent types
+    numeric_columns = ['image_id', 'patch_x', 'patch_y', 'patch_width', 'patch_height', 'z_slice', 'timepoint']
+    for col in numeric_columns:
+        if col in df_for_omero.columns:
+            # Convert to integer type explicitly to ensure consistent typing
+            try:
+                # Convert to numeric with coercion
+                numeric_series = pd.to_numeric(df_for_omero[col], errors='coerce')
+                # Then fill any NAs and convert to integers
+                df_for_omero[col] = numeric_series.fillna(-1).astype(int)
+            except Exception:
+                print(f"Warning: Could not convert column '{col}' to numeric. Setting to -1.")
+                df_for_omero[col] = -1
+    
+    # Boolean columns need to be boolean type
+    boolean_columns = ['train', 'validate', 'processed', 'is_patch', 'is_volumetric']
+    for col in boolean_columns:
+        if col in df_for_omero.columns:
+            df_for_omero[col] = df_for_omero[col].fillna(False).astype(bool)
+    
+    # Then convert ID columns to string, handling None values properly
+    id_columns = ['embed_id', 'label_id', 'roi_id', 'schema_attachment_id']
+    for col in id_columns:
+        if col in df_for_omero.columns:
+            # Replace NaN/None with 'None' string then convert all to string
+            df_for_omero[col] = df_for_omero[col].fillna('None').astype(str)
+    
+    # Try to delete the existing table
+    try:
+        print(f"Attempting to delete existing table with ID: {table_id}")
+        conn.deleteObjects("FileAnnotation", [table_id], wait=True)
+        print(f"Deleted existing table with ID: {table_id}")
+    except Exception as e:
+        print(f"Warning: Could not delete existing table: {e}")
+        # If we can't delete the table, try with a new title to avoid conflicts
+        if "cannot read all the specified objects" in str(e):
+            table_title = f"{table_title}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+            print(f"Using alternative table title: {table_title}")
+    
+    # Create a new table with the updated data
+    try:
+        new_table_id = ezomero.post_table(
+            conn,
+            object_type=container_type.capitalize(),
+            object_id=container_id,
+            table=df_for_omero,
+            title=table_title
+        )
+        
+        print(f"Created updated table with ID: {new_table_id}")
+        return new_table_id, df
+        
+    except Exception as e:
+        print(f"Error creating updated table: {e}")
+        return table_id, df  # Return original values on error
+
+
+def get_table_by_name(conn, obj_type, obj_id, table_title):
+    """
+    Get table annotation attached to an object by name.
+    
+    Parameters:
+        conn: OMERO connection
+        obj_type: Type of object ('Dataset', 'Project', etc.)
+        obj_id: ID of object
+        table_title: Name of the table to find
+        
+    Returns:
+        tuple: (table_id, table_df) or (None, None) if not found
+    """
+    import ezomero
+    import pandas as pd
+    
+    obj = conn.getObject(obj_type, obj_id)
+    if not obj:
+        print(f"Object {obj_type} with ID {obj_id} not found")
+        return None, None
+    
+    # Get all file annotations
+    file_ann_ids = ezomero.get_file_annotation_ids(conn, obj_type, obj_id)
+    print(f"Found {len(file_ann_ids)} file annotations on {obj_type} {obj_id}")
+    
+    # Check each annotation to see if it's a table with the right name
+    for ann_id in file_ann_ids:
+        try:
+            # Get the actual annotation object
+            ann = conn.getObject("FileAnnotation", ann_id)
+            if ann is None:
+                continue
+                
+            filename = ann.getFileName()
+                            
+            # Check if the filename contains our table title
+            if table_title in filename:
+                # Try to open it as a table
+                try:
+                    table_df = ezomero.get_table(conn, ann_id)
+                    if isinstance(table_df, pd.DataFrame):
+                        print(f"Found matching table: {filename} (ID: {ann_id})")
+                        return ann_id, table_df
+                except Exception as e:
+                    print(f"Could not read table from annotation {ann_id}: {e}")
+        except Exception as e:
+            print(f"Error processing annotation {ann_id}: {e}")
+    
+    print(f"No table found with title '{table_title}'")
+    return None, None
