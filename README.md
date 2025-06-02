@@ -1,6 +1,9 @@
-# OMERO Jupyter Notebooks
+# Cell Observatory - OMERO Jupyter Notebooks
 
-This GitHub repository contains Jupyter notebooks to interact with OMERO data.
+This GitHub repository contains Jupyter notebooks to interact with OMERO data in different ways.
+
+## Features
+- Create AI training data sets using the micro-sam annotator tool.
 
 The library of notebooks are still in an early stage but can be used as a start on how to analyze data from OMERO. 
 They show how data can be loaded from OMERO and how results can be stored back into OMERO as attachments or ROIs.
