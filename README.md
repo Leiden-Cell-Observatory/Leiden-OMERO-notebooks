@@ -3,10 +3,12 @@
 This GitHub repository contains Jupyter notebooks to interact with OMERO data in different ways.
 
 ## Features
-- Create AI training data sets using the micro-sam annotator tool.
+- Prepare AI training data sets using the micro-SAM annotator tool on OMERO datasets and screens. Saving the annotations back to OMERO allows for easy access and reuse of the training data.
+- Use the training data to fine-tune micro-SAM models.
+- Run inference on OMERO datasets using micro-SAM models.
+- Upload metadata from [MIHCSME](https://fairdomhub.org/investigations/575) (Minimal Information for High Content Screening in Microscopy Experiments) Excel files to OMERO, allowing for structured metadata storage and retrieval.
 
-The library of notebooks are still in an early stage but can be used as a start on how to analyze data from OMERO. 
-They show how data can be loaded from OMERO and how results can be stored back into OMERO as attachments or ROIs.
+These notebooks are still in an early stage of development and may not be fully functional or stable. Any feedback is highly appreciated.  
 
 # Setting up
 These notebooks can either be run locally using conda environments or can be used by installing the docker image provided which provides everything that is needed to run the notebooks on a Jupyter server.
@@ -71,11 +73,9 @@ For Windows (after starting VcXsrv with "Disable access control" checked):
 ```powershell
 docker run -p 8888:8888 -v ${PWD}/data:/home/jovyan/data -v ${PWD}/notebooks:/home/jovyan/notebooks -v ${PWD}/microsam:/home/jovyan/microsam -e DISPLAY=host.docker.internal:0 --gpus=all  omero-ipynb 
 ```
-
 Open the Jupyter URL that appears in the console output.
 
-
-## Micro-sam
+## Micro-SAM
 These notebooks are based on [micro-sam](https://github.com/computational-cell-analytics/micro-sam).
 The notebooks allow to:
 - Annotate datasets stored in OMERO. These annotations are stored with the original data using OMERO.tables, OMERO.ROIs . This structured storing of the annotations allow to train or fine-tune different AI models.

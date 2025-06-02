@@ -7,6 +7,7 @@ import imageio.v3 as imageio
 import pandas as pd
 import json
 import shutil
+import ezomero
 from .image_functions import label_to_rois
 from .utils import NumpyEncoder
 
@@ -245,6 +246,132 @@ def get_dask_image(conn, image_id, z_slice=None, timepoint=None, channel=None, t
         return None
 
 
+def get_dask_image_multiple(conn, image_id, z_slices=None, timepoints=None, channel=None, three_d=False, patch_coords=None):
+    """
+    Enhanced version of get_dask_image that properly handles multiple z-slices and timepoints
+    
+    Args:
+        conn: OMERO connection
+        image_id: ID of image to load
+        z_slices: List of Z-slice indices to load
+        timepoints: List of timepoint indices to load
+        channel: Optional specific channel to load (int or list)
+        three_d: Whether to load a 3D volume (all z-slices) instead of a single slice
+        patch_coords: Optional tuple of (x, y, width, height) to extract a patch
+    
+    Returns:
+        dask array representation of image with shape (T, Z, C, Y, X) or reduced dimensions as appropriate
+    """
+    import dask
+    import dask.array as da
+    
+    image = conn.getObject("Image", image_id)
+    if not image:
+        return None
+        
+    pixels = image.getPrimaryPixels()
+    
+    # Get image dimensions
+    size_z = image.getSizeZ()
+    size_c = image.getSizeC()
+    size_t = image.getSizeT()
+    size_y = image.getSizeY()
+    size_x = image.getSizeX()
+    
+    # Define specific dimensions to load if provided
+    # If three_d is True, we want all z-slices, otherwise use the provided z_slices
+    if three_d:
+        z_range = range(size_z)  # Load all z-slices for 3D
+    else:
+        if z_slices is None:
+            z_range = [0]  # Default to first slice if none specified
+        elif isinstance(z_slices, (list, tuple)):
+            z_range = z_slices
+        else:
+            z_range = [z_slices]  # Convert single value to list
+    
+    # Handle timepoints similarly
+    if timepoints is None:
+        t_range = [0]  # Default to first timepoint if none specified
+    elif isinstance(timepoints, (list, tuple)):
+        t_range = timepoints
+    else:
+        t_range = [timepoints]  # Convert single value to list
+    
+    # Handle channels
+    if channel is None:
+        c_range = range(size_c)
+    elif isinstance(channel, (list, tuple)):
+        c_range = channel
+    else:
+        c_range = [channel]
+    
+    # Extract patch information if provided
+    x_offset = 0
+    y_offset = 0
+    if patch_coords:
+        x_offset, y_offset, patch_width, patch_height = patch_coords
+        size_x = patch_width
+        size_y = patch_height
+    
+    # Create empty dict to store delayed objects
+    delayed_planes = {}
+    
+    # Describe what we're loading
+    desc_type = "3D volume" if three_d else "image"
+    patch_desc = " patch" if patch_coords else ""
+    print(f"Creating dask array for {desc_type}{patch_desc} {image_id} with lazy loading")
+    print(f"Dimensions: T={len(t_range)}, Z={len(z_range)}, C={len(c_range)}, Y={size_y}, X={size_x}")
+    
+    # Create lazy loading function
+    @dask.delayed
+    def get_plane(z, c, t):
+        print(f"Loading plane: Z={z}, C={c}, T={t}")
+        if patch_coords:
+            full_plane = pixels.getPlane(z, c, t)
+            return full_plane[y_offset:y_offset+size_y, x_offset:x_offset+size_x]
+        else:
+            return pixels.getPlane(z, c, t)
+    
+    # Build dask arrays
+    t_arrays = []
+    for t in t_range:
+        z_arrays = []
+        for z in z_range:
+            c_arrays = []
+            for c in c_range:
+                # Create a key for this plane
+                key = (z, c, t)
+                
+                # Check if we've already created this delayed object
+                if key not in delayed_planes:
+                    # Create a delayed object for this plane
+                    delayed_plane = get_plane(z, c, t)
+                    delayed_planes[key] = delayed_plane
+                else:
+                    delayed_plane = delayed_planes[key]
+                
+                # Convert to dask array with known shape and dtype
+                shape = (size_y, size_x)
+                dtype = np.uint16  # Most OMERO images use 16-bit
+                dask_plane = da.from_delayed(delayed_plane, shape=shape, dtype=dtype)
+                c_arrays.append(dask_plane)
+                
+            if c_arrays:
+                # Stack channels for this z position
+                z_arrays.append(da.stack(c_arrays))
+        
+        if z_arrays:
+            # Stack z-slices for this timepoint
+            t_arrays.append(da.stack(z_arrays))
+    
+    if t_arrays:
+        # Stack all timepoints
+        return da.stack(t_arrays)
+    else:
+        return None
+
+
 def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint, model_type, 
                           is_volumetric=False, patch_offset=None, read_only_mode=False, local_output_dir="./omero_annotations",
                           trainingset_name=None):
@@ -318,6 +445,9 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
             "label_image_path": os.path.relpath(local_label_path, local_output_dir)
         }
         
+        # Save metadata using the standard OMERO namespace
+        roi_metadata["namespace"] = "openmicroscopy.org/omero/annotation"
+        
         # Save metadata
         with open(local_roi_path, 'w') as f:
             json.dump(roi_metadata, f, indent=2, cls=NumpyEncoder)
@@ -350,12 +480,31 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
                 roi_name = f'{trainingset_name}_{roi_name}'
                 roi_desc = f'{trainingset_name} - {roi_desc}'
                 
-            roi_id = ezomero.post_roi(
+            roi = ezomero.post_roi(
                 conn,
                 image.getId(),
                 shapes,
                 name=roi_name,
                 description=roi_desc
+            )
+            roi_id = roi.getId().getValue()
+            
+            # Add configuration details as map annotation with standard namespace
+            config = {
+                "model_type": model_type,
+                "channel": str(channel),
+                "timepoint": str(timepoint),
+                "z_slice": str(z_slice) if not isinstance(z_slice, (list, range)) else str(list(z_slice)),
+                "is_volumetric": str(is_volumetric),
+                "has_patch_offset": str(patch_offset is not None)
+            }
+              # Add annotation with standard namespace
+            ezomero.post_map_annotation(
+                conn,
+                object_type="Roi", 
+                object_id=roi_id,
+                kv_dict=config,
+                ns="openmicroscopy.org/omero/annotation"
             )
         else:
             roi_id = None
@@ -720,3 +869,265 @@ def get_table_by_name(conn, obj_type, obj_id, table_title):
     
     print(f"No table found with title '{table_title}'")
     return None, None
+
+
+def get_image_dimensions(images):    
+    """
+    Determine the maximum Z, T, and C dimensions across all selected images
+    
+    Args:
+        images: List of OMERO image objects
+        
+    Returns:
+        tuple: (max_z, max_t, max_c) - maximum dimensions across all images
+    """
+    max_z = 0
+    max_t = 0
+    max_c = 0
+    
+    for image in images:
+        size_z = image.getSizeZ()
+        size_t = image.getSizeT()
+        size_c = image.getSizeC()
+        
+        max_z = max(max_z, size_z)
+        max_t = max(max_t, size_t)
+        max_c = max(max_c, size_c)
+    
+    print(f"Analyzed {len(images)} images:")
+    print(f"  Max Z-slices: {max_z}")
+    print(f"  Max timepoints: {max_t}")
+    print(f"  Max channels: {max_c}")
+    
+    return max_z, max_t, max_c
+
+
+def load_configs_from_omero(conn, datatype, object_id):
+    """
+    Load previously saved configurations from OMERO map annotations
+    
+    Args:
+        conn: OMERO connection
+        datatype: Type of OMERO object ('Dataset', 'Project', etc.)
+        object_id: ID of the OMERO object
+        
+    Returns:
+        list: List of dictionaries containing configuration data
+    """
+    try:
+        # Get all map annotations for the object
+        map_ann_ids = ezomero.get_map_annotation_ids(
+            conn, 
+            object_type=datatype, 
+            object_id=object_id,
+            ns="openmicroscopy.org/omero/annotation"
+        )
+        
+        configs = []
+        for ann_id in map_ann_ids:
+            try:
+                # Get the map annotation data
+                kv_dict = ezomero.get_map_annotation(conn, ann_id)
+                
+                # Check if this is a microsam configuration
+                if kv_dict.get('config_type') == 'microsam_annotation_settings':
+                    config_name = kv_dict.get('config_name', f'Config_{ann_id}')
+                    created_at = kv_dict.get('created_at', 'Unknown')
+                    
+                    # Extract the actual configuration (exclude metadata keys)
+                    metadata_keys = {'config_name', 'created_at', 'config_type'}
+                    config_data = {k: v for k, v in kv_dict.items() if k not in metadata_keys}
+                    
+                    # Convert string values back to appropriate types
+                    processed_config = {}
+                    for key, value in config_data.items():
+                        if key.endswith('_list') or ',' in value:
+                            # Convert comma-separated strings back to lists
+                            try:
+                                processed_config[key] = [item.strip() for item in value.split(',')]
+                            except:
+                                processed_config[key] = value
+                        elif value.lower() in ('true', 'false'):
+                            # Convert string booleans back to boolean
+                            processed_config[key] = value.lower() == 'true'
+                        else:
+                            # Try to convert to number if possible, otherwise keep as string
+                            try:
+                                processed_config[key] = int(value)
+                            except ValueError:
+                                try:
+                                    processed_config[key] = float(value)
+                                except ValueError:
+                                    processed_config[key] = value
+                    
+                    configs.append({
+                        'id': ann_id,
+                        'name': config_name,
+                        'created_at': created_at,
+                        'config': processed_config
+                    })
+                    
+            except Exception as e:
+                print(f"Error processing map annotation {ann_id}: {e}")
+                continue
+        
+        print(f"Found {len(configs)} saved configurations")
+        return configs
+        
+    except Exception as e:
+        print(f"Error loading configurations from OMERO: {e}")
+        return []
+
+
+def save_config_to_omero(conn, datatype, object_id, config, trainingset_name=None):
+    """
+    Save configuration settings as OMERO map annotation using the namespace
+    
+    Args:
+        conn: OMERO connection
+        datatype: Type of OMERO object ('Dataset', 'Project', etc.)
+        object_id: ID of the OMERO object
+        config: Dictionary containing configuration settings
+        trainingset_name: Optional name for the training set
+        
+    Returns:
+        int: ID of created map annotation, or None if failed
+    """
+    try:
+        # Create a name for the configuration
+        config_name = trainingset_name if trainingset_name else f"microsam_config_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Prepare the key-value pairs for the map annotation
+        # Convert all values to strings as required by OMERO map annotations
+        key_value_data = []
+        for key, value in config.items():
+            if isinstance(value, (list, tuple)):
+                # Convert lists/tuples to comma-separated strings
+                str_value = ','.join(map(str, value))
+            elif isinstance(value, bool):
+                # Convert boolean to string
+                str_value = str(value).lower()
+            else:
+                str_value = str(value)
+            key_value_data.append([key, str_value])
+        
+        # Add metadata about the configuration
+        key_value_data.extend([
+            ['config_name', config_name],
+            ['created_at', pd.Timestamp.now().isoformat()],
+            ['config_type', 'microsam_annotation_settings']
+        ])
+        
+        # Create map annotation using ezomero
+        map_ann_id = ezomero.post_map_annotation(
+            conn,
+            object_type=datatype,
+            object_id=object_id,
+            kv_dict=dict(key_value_data),
+            ns="openmicroscopy.org/omero/annotation"
+        )
+        
+        print(f"Saved configuration '{config_name}' as map annotation ID: {map_ann_id}")
+        return map_ann_id
+        
+    except Exception as e:
+        print(f"Error saving configuration to OMERO: {e}")
+        return None
+
+
+def get_dask_dimensions(conn, image_id):
+    """
+    Get dimensions of an image using dask for efficient handling of large images
+    
+    Args:
+        conn: OMERO connection
+        image_id: ID of the image to analyze
+        
+    Returns:
+        dict: Dictionary containing image dimensions (sizeZ, sizeT, sizeC, sizeY, sizeX)
+    """
+    image = conn.getObject("Image", image_id)
+    if not image:
+        return None
+    
+    # Get dimensions directly without loading pixel data
+    dims = {
+        "sizeZ": image.getSizeZ(),
+        "sizeT": image.getSizeT(),
+        "sizeC": image.getSizeC(),
+        "sizeY": image.getSizeY(),
+        "sizeX": image.getSizeX()
+    }
+    
+    return dims
+
+
+def get_annotation_configurations(conn, container_type, container_id, namespace="openmicroscopy.org/omero/annotation"):
+    """
+    Retrieve configuration settings stored as annotations in OMERO
+    
+    Args:
+        conn: OMERO connection
+        container_type: Type of container ('project', 'dataset', 'image', etc.)
+        container_id: ID of the container
+        namespace: Namespace for the annotations to retrieve
+        
+    Returns:
+        list: List of configuration dictionaries or empty list if none found
+    """
+    try:
+        import json
+        
+        # Get annotations for this object with the specified namespace
+        # Format required by ezomero
+        formatted_type = f"{container_type.capitalize()}I"
+        
+        # Get all annotations with the specified namespace
+        annotations = conn.getObjects("MapAnnotation", 
+                                     opts={"object": formatted_type, 
+                                          "id": container_id,
+                                          "namespace": namespace})
+        
+        # Extract configuration settings
+        configs = []
+        for ann in annotations:
+            try:
+                # Get the key-value pairs
+                kv_pairs = ann.getValue()
+                
+                # Convert to dictionary
+                config = {}
+                for k, v in kv_pairs:
+                    # Try to convert values that look like JSON
+                    if v.startswith('[') and v.endswith(']') or v.startswith('{') and v.endswith('}'):
+                        try:
+                            config[k] = json.loads(v)
+                        except json.JSONDecodeError:
+                            config[k] = v
+                    # Handle boolean values
+                    elif v.lower() == 'true':
+                        config[k] = True
+                    elif v.lower() == 'false':
+                        config[k] = False
+                    # Handle numeric values
+                    elif v.isdigit():
+                        config[k] = int(v)
+                    else:
+                        try:
+                            config[k] = float(v)
+                        except ValueError:
+                            config[k] = v
+                
+                # Add the annotation ID
+                config['annotation_id'] = ann.getId()
+                configs.append(config)
+                
+            except Exception as e:
+                print(f"Error processing annotation: {e}")
+                continue
+        
+        return configs
+        
+    except Exception as e:
+        print(f"Error getting annotation configurations: {e}")
+        return []

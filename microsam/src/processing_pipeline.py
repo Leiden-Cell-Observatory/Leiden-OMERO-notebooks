@@ -24,7 +24,10 @@ from .omero_functions import (
     upload_rois_and_labels,
     initialize_tracking_table,
     update_tracking_table_rows,
-    get_table_by_name
+    get_table_by_name,
+    get_dask_dimensions,
+    get_dask_image_multiple,
+    get_annotation_configurations
 )
 
 
@@ -53,10 +56,10 @@ def process_omero_batch(
     resume_from_table: bool = False,
     read_only_mode: bool = False,
     local_output_dir: str = "./omero_annotations",
-    trainingset_name: str = None
+    trainingset_name: str = None,
+    group_by_image: bool = True
 ):
-    """
-    Process OMERO images in batches for SAM segmentation using dask for lazy loading
+    """    Process OMERO images in batches for SAM segmentation using dask for lazy loading
     and zarr for temporary annotation storage
     
     Args:
@@ -84,6 +87,10 @@ def process_omero_batch(
         resume_from_table: Whether to resume annotation from an existing tracking table
         read_only_mode: Whether to save annotations locally instead of uploading to OMERO
         local_output_dir: Directory to save annotations in read-only mode
+        trainingset_name: Optional name for the training set (used in naming tables and annotations)
+        group_by_image: Whether to keep all z-slices and timepoints from the same image together
+                      in either training or validation set. When True, all slices and timepoints
+                      from an image will either all be in training or all in validation set.
     
     Returns:
         tuple: (table_id, combined_images)
@@ -104,8 +111,7 @@ def process_omero_batch(
         os.makedirs(path)
           # Table parameters
     table_title = f"micro_sam_{trainingset_name}" if trainingset_name else "micro_sam_training_data"
-    
-    # Check if we should resume from existing table or create a new one
+      # Check if we should resume from existing table or create a new one
     if resume_from_table:
         try:
             # Get existing tracking table using our helper function
@@ -137,7 +143,7 @@ def process_omero_batch(
         # Get images list (already provided as argument)
         combined_images_sequence = np.zeros(len(images_list))  # Initialize sequence array
         
-        # Select images based on segment_all flag
+    # Select images based on segment_all flag
         if segment_all:
             combined_images = images_list
             combined_images_sequence = np.zeros(len(combined_images))  # All treated as training
@@ -155,10 +161,12 @@ def process_omero_batch(
             validate_candidates = [img for i, img in enumerate(images_list) if i not in train_indices]
             validate_images = np.random.choice(validate_candidates, validate_n, replace=False)
             
-            # Interleave the arrays and create sequence markers
+
+            # Interleave training and validation sets
             combined_images, combined_images_sequence = interleave_arrays(train_images, validate_images)
+            print(f"Interleaving training and validation images: {train_n} training images, {validate_n} validation images")
         
-        # Initialize the complete tracking table with all planned processing units
+    # Initialize the complete tracking table with all planned processing units
         print("Creating complete tracking table with all planned images/patches...")
         table_id, df = initialize_tracking_table(
             conn, 
@@ -177,6 +185,36 @@ def process_omero_batch(
             three_d=three_d,
             trainingset_name=trainingset_name
         )
+        
+        # Store annotation configuration in OMERO using the recommended namespace
+        config = {
+            "model_type": model_type,
+            "channel": int(channel),
+            "timepoints": timepoints,
+            "timepoint_mode": timepoint_mode,
+            "z_slices": z_slices,
+            "z_slice_mode": z_slice_mode,
+            "three_d": three_d,
+            "use_patches": use_patches,
+            "patch_size": patch_size if use_patches else None,
+            "patches_per_image": patches_per_image if use_patches else None,
+            "random_patches": random_patches if use_patches else None,
+            "segment_all": segment_all,
+            "train_n": train_n if not segment_all else None,
+            "validate_n": validate_n if not segment_all else None,
+            "group_by_image": group_by_image
+        }
+        
+        
+        # Add annotation to container with standard namespace
+        schema_id = ezomero.post_map_annotation(
+            conn,
+            container_type.capitalize(),  # Format required by ezomero
+            container_id,
+            config,
+            ns="openmicroscopy.org/omero/annotation",
+        )
+        print(f"Stored annotation configuration in OMERO with ID: {schema_id}")
     else:
         # When resuming, we need to rebuild combined_images and sequence arrays
         combined_images = []
@@ -194,12 +232,10 @@ def process_omero_batch(
                 combined_images_sequence.append(seq_val)
         
         combined_images_sequence = np.array(combined_images_sequence)
-        
-    # Build processing units from unprocessed rows in tracking table
+          # Build processing units from unprocessed rows in tracking table
     processing_units = []  # Will contain tuples of (image, sequence_val, [metadata], row_index)
-    
     for idx, row in df.iterrows():
-        if row['processed'] != True:  # Process any rows that aren't marked as processed
+        if not row['processed']:  # Process any rows that aren't marked as processed
             img_id = int(row['image_id'])
             image = conn.getObject("Image", img_id)
             
@@ -240,127 +276,127 @@ def process_omero_batch(
         
         start_idx = batch_idx * batch_size
         end_idx = min((batch_idx + 1) * batch_size, len(processing_units))
-        batch_units = processing_units[start_idx:end_idx]
-          # Load batch images as dask arrays for lazy loading
+        batch_units = processing_units[start_idx:end_idx]          # Load batch images for processing
         images = []
-        dask_images = []
         image_data = []  # Store metadata about each image/patch
         
         for unit_idx, (image, seq_val, patch, row_idx) in enumerate(batch_units):
             image_id = image.getId()
-            
-            # Determine which timepoint to use
+              # Determine which timepoints to use
             if timepoint_mode == "all":
-                # Use all timepoints (not yet supported in this function)
-                actual_timepoint = timepoints[0]  # Default to first timepoint for now
-                print("Warning: 'all' timepoint mode not fully supported yet, using first timepoint")
+                # Use all timepoints
+                actual_timepoints = list(range(image.getSizeT())) if image.getSizeT() > 0 else [0]
             elif timepoint_mode == "random":
                 # Select a random timepoint from the list
-                actual_timepoint = np.random.choice(timepoints)
+                actual_timepoints = [np.random.choice(timepoints)]
             else:  # "specific"
-                # Use the first timepoint in the list
-                actual_timepoint = timepoints[0]
+                # Use all specified timepoints
+                actual_timepoints = timepoints
+              # Get primary pixels
+            pixels = image.getPrimaryPixels()
+            
+            # Determine which z-slices to use
+            if z_slice_mode == "all":
+                # Use all z-slices
+                actual_z_slices = list(range(image.getSizeZ())) if image.getSizeZ() > 0 else [0]
+            elif z_slice_mode == "random":
+                # Select a random z-slice from the list
+                actual_z_slices = [np.random.choice(z_slices)]
+            else:  # "specific"
+                # Use all specified z-slices
+                actual_z_slices = z_slices
             
             # For 3D mode or 2D with patches
             if three_d:
-                # 3D mode - process entire Z-stack or specified z-range
-                pixels = image.getPrimaryPixels()
-                
-                if patch is not None:
-                    # Extract 3D patch (x, y, z-stack)
-                    x, y, width, height = patch
-                    img_3d = np.zeros((image.getSizeZ(), height, width), dtype=np.uint16)
-                    
-                    # Load each z-slice for the patch
-                    for z in range(image.getSizeZ()):
-                        full_plane = pixels.getPlane(z, channel, actual_timepoint)
-                        img_3d[z] = full_plane[y:y+height, x:x+width]
+                # For each timepoint
+                for t_idx, actual_timepoint in enumerate(actual_timepoints):
+                    # 3D mode - process entire Z-stack or specified z-range
+                    if patch is not None:
+                        # Extract 3D patch (x, y, z-stack)
+                        x, y, width, height = patch
+                        img_3d = np.zeros((len(actual_z_slices), height, width), dtype=np.uint16)
                         
-                    # Record metadata
-                    image_data.append({
-                        'image_id': image_id, 
-                        'sequence': seq_val,
-                        'timepoint': actual_timepoint,
-                        'z_slice': 'all',
-                        'is_patch': True,
-                        'patch_x': x,
-                        'patch_y': y,
-                        'patch_width': width,
-                        'patch_height': height
-                    })
-                else:
-                    # Process full 3D volume
-                    img_3d = np.stack([pixels.getPlane(z, channel, actual_timepoint) 
-                                     for z in range(image.getSizeZ())])
+                        # Load each z-slice for the patch
+                        for z_idx, z in enumerate(actual_z_slices):
+                            full_plane = pixels.getPlane(z, channel, actual_timepoint)
+                            img_3d[z_idx] = full_plane[y:y+height, x:x+width]
+                            
+                        # Record metadata
+                        image_data.append({
+                            'image_id': image_id, 
+                            'sequence': seq_val,
+                            'timepoint': actual_timepoint,
+                            'z_slice': actual_z_slices,  # Store all z-slices
+                            'is_patch': True,
+                            'patch_x': x,
+                            'patch_y': y,
+                            'patch_width': width,
+                            'patch_height': height
+                        })
+                    else:
+                        # Process full 3D volume for the selected z-slices
+                        img_3d = np.stack([pixels.getPlane(z, channel, actual_timepoint) 
+                                        for z in actual_z_slices])
+                        
+                        # Record metadata
+                        image_data.append({
+                            'image_id': image_id, 
+                            'sequence': seq_val,
+                            'timepoint': actual_timepoint,
+                            'z_slice': actual_z_slices,  # Store all z-slices
+                            'is_patch': False,
+                            'patch_x': 0,
+                            'patch_y': 0,
+                            'patch_width': image.getSizeX(),
+                            'patch_height': image.getSizeY()
+                        })
                     
-                    # Record metadata
-                    image_data.append({
-                        'image_id': image_id, 
-                        'sequence': seq_val,
-                        'timepoint': actual_timepoint,
-                        'z_slice': 'all',
-                        'is_patch': False,
-                        'patch_x': 0,
-                        'patch_y': 0,
-                        'patch_width': image.getSizeX(),
-                        'patch_height': image.getSizeY()
-                    })
-                
-                images.append(img_3d)
-                print(f"Loaded 3D image/patch for image {image_id} with shape {img_3d.shape}")
-                
+                    images.append(img_3d)
+                    print(f"Loaded 3D image/patch for image {image_id} at timepoint {actual_timepoint} with shape {img_3d.shape}")
+            
             else:
-                # 2D mode - determine which z-slice to use
-                if z_slice_mode == "all":
-                    # Use all z-slices (not yet supported in this function)
-                    actual_z_slice = z_slices[0]  # Default to first z-slice for now
-                    print("Warning: 'all' z-slice mode not fully supported yet, using first z-slice")
-                elif z_slice_mode == "random":
-                    # Select a random z-slice from the list
-                    actual_z_slice = np.random.choice(z_slices)
-                else:  # "specific"
-                    # Use the first z-slice in the list
-                    actual_z_slice = z_slices[0]
-                
-                pixels = image.getPrimaryPixels()
-                
-                if patch is not None:
-                    # Extract 2D patch from the specified plane
-                    x, y, width, height = patch
-                    full_plane = pixels.getPlane(actual_z_slice, channel, actual_timepoint)
-                    img = full_plane[y:y+height, x:x+width]
-                    
-                    # Record metadata
-                    image_data.append({
-                        'image_id': image_id, 
-                        'sequence': seq_val,
-                        'timepoint': actual_timepoint,
-                        'z_slice': actual_z_slice,
-                        'is_patch': True,
-                        'patch_x': x,
-                        'patch_y': y,
-                        'patch_width': width,
-                        'patch_height': height
-                    })
-                else:
-                    # Get full 2D plane
-                    img = pixels.getPlane(actual_z_slice, channel, actual_timepoint)
-                    
-                    # Record metadata
-                    image_data.append({
-                        'image_id': image_id, 
-                        'sequence': seq_val,
-                        'timepoint': actual_timepoint,
-                        'z_slice': actual_z_slice,
-                        'is_patch': False,
-                        'patch_x': 0,
-                        'patch_y': 0,
-                        'patch_width': image.getSizeX(),
-                        'patch_height': image.getSizeY()
-                    })
-                
-                images.append(img)
-                print(f"Loaded 2D image/patch for image {image_id} with shape {img.shape}")
+                # 2D mode
+                # Process each timepoint
+                for t_idx, actual_timepoint in enumerate(actual_timepoints):
+                    # Process each z-slice
+                    for z_idx, actual_z_slice in enumerate(actual_z_slices):
+                        if patch is not None:
+                            # Extract 2D patch from the specified plane
+                            x, y, width, height = patch
+                            full_plane = pixels.getPlane(actual_z_slice, channel, actual_timepoint)
+                            img = full_plane[y:y+height, x:x+width]
+                            
+                            # Record metadata
+                            image_data.append({
+                                'image_id': image_id, 
+                                'sequence': seq_val,
+                                'timepoint': actual_timepoint,
+                                'z_slice': actual_z_slice,
+                                'is_patch': True,
+                                'patch_x': x,
+                                'patch_y': y,
+                                'patch_width': width,
+                                'patch_height': height
+                            })
+                        else:
+                            # Get full 2D plane
+                            img = pixels.getPlane(actual_z_slice, channel, actual_timepoint)
+                            
+                            # Record metadata
+                            image_data.append({
+                                'image_id': image_id, 
+                                'sequence': seq_val,
+                                'timepoint': actual_timepoint,
+                                'z_slice': actual_z_slice,
+                                'is_patch': False,
+                                'patch_x': 0,
+                                'patch_y': 0,
+                                'patch_width': image.getSizeX(),
+                                'patch_height': image.getSizeY()
+                            })
+                        
+                        images.append(img)
+                        print(f"Loaded 2D image/patch for image {image_id} at timepoint {actual_timepoint}, z-slice {actual_z_slice} with shape {img.shape}")
         
         # Process batch with SAM using standard numpy arrays
         print("Starting napari viewer with SAM annotator. Close the viewer window when done.")
@@ -418,12 +454,14 @@ def process_omero_batch(
                 print(f"Warning: Segmentation file not found for image {image.getId()}, skipping")
                 batch_skipped += 1
                 
-                # Add a row for skipped image but mark as not processed
+        # Add a row for skipped image but mark as not processed
                 is_train = unit_data['sequence'] == 0 if not segment_all else True
                 is_validate = unit_data['sequence'] == 1 if not segment_all else False
                 
-                # Z-slice information
+                # Z-slice information - convert list to string for storage in table if needed
                 z_info = 'all' if three_d else unit_data['z_slice']
+                if isinstance(z_info, list):
+                    z_info = str(z_info)
                 
                 new_row = pd.DataFrame([{
                     "image_id": image.getId(),
@@ -489,11 +527,11 @@ def process_omero_batch(
                 # We need to create ROIs with the proper offset in the original image
                 patch_x, patch_y, _, _ = patch_info
             else:
-                patch_x, patch_y = 0, 0
-                  # Upload labels and create ROIs - handle 3D and patches
+                patch_x, patch_y = 0, 0            # Upload labels and create ROIs - handle 3D and patches
             if three_d:
                 # For 3D data, handle z-dimension correctly
-                z_for_roi = range(image.getSizeZ())
+                # Use the actual z-slices that were processed if available
+                z_for_roi = unit_data['z_slice'] if isinstance(unit_data['z_slice'], list) else range(image.getSizeZ())
                 label_id, roi_id = upload_rois_and_labels(
                     conn, 
                     image, 
@@ -510,6 +548,7 @@ def process_omero_batch(
                 )
             else:
                 # For 2D data - with potential patch offset
+                # Pass the exact z-slice that was processed
                 label_id, roi_id = upload_rois_and_labels(
                     conn, 
                     image, 
@@ -528,10 +567,16 @@ def process_omero_batch(
             # Update tracking dataframe
             is_train = unit_data['sequence'] == 0 if not segment_all else True
             is_validate = unit_data['sequence'] == 1 if not segment_all else False
-            
-            # Z-slice information
+              # Z-slice information - convert lists to string for storage if needed
             z_info = 'all' if three_d else unit_data['z_slice']
+            if isinstance(z_info, list):
+                z_info = str(z_info)
             
+            # Timepoint - also convert to string if needed
+            t_info = unit_data['timepoint']
+            if isinstance(t_info, list):
+                t_info = str(t_info)
+                
             new_row = pd.DataFrame([{
                 "image_id": image.getId(),
                 "image_name": image.getName(),
@@ -539,7 +584,7 @@ def process_omero_batch(
                 "validate": is_validate,
                 "channel": channel,
                 "z_slice": z_info,
-                "timepoint": unit_data['timepoint'],
+                "timepoint": t_info,
                 "sam_model": model_type,
                 "embed_id": embed_id,
                 "label_id": label_id,
@@ -584,16 +629,15 @@ def process_omero_batch(
         print(f"  - Completed: {batch_completed}/{len(batch_units)} units")
         print(f"  - Skipped: {batch_skipped}/{len(batch_units)} units")
         
-        if batch_skipped > 0 and batch_idx < total_batches - 1:
-            # Ask user if they want to continue with next batch or stop here
+        if batch_skipped > 0 and batch_idx < total_batches - 1:        # Ask user if they want to continue with next batch or stop here
             try:
                 response = input("Some units were skipped. Continue with next batch? (y/n): ")
                 if response.lower() not in ['y', 'yes']:
                     print("Stopping processing at user request.")
                     break
-            except:
+            except Exception as e:
                 # In case of non-interactive environment, continue by default
-                print("Non-interactive environment detected. Continuing with next batch.")
+                print(f"Non-interactive environment detected ({str(e)}). Continuing with next batch.")
         
         # Clean up temporary files for this batch
         for n in range(batch_size):  # Use local indexing for cleanup
@@ -609,13 +653,11 @@ def process_omero_batch(
                     os.remove(path)
                     
             if os.path.exists(embed_zarr) and os.path.isdir(embed_zarr):
-                shutil.rmtree(embed_zarr)
+                shutil.rmtree(embed_zarr)    # Final statistics
+    total_processed = df[df['processed']].shape[0]
+    total_skipped = df[~df['processed']].shape[0]
     
-    # Final statistics
-    total_processed = df[df['processed'] == True].shape[0]
-    total_skipped = df[df['processed'] == False].shape[0]
-    
-    print(f"\nAll batches completed.")
+    print("\nAll batches completed.")
     print(f"Total processed: {total_processed} units")
     print(f"Total skipped: {total_skipped} units")
     print(f"Final tracking table ID: {table_id} in {source_desc}")
