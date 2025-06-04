@@ -487,7 +487,7 @@ def upload_rois_and_labels(conn, image, label_file, z_slice, channel, timepoint,
                 name=roi_name,
                 description=roi_desc
             )
-            roi_id = roi.getId().getValue()
+            roi_id = roi
             
             # Add configuration details as map annotation with standard namespace
             config = {

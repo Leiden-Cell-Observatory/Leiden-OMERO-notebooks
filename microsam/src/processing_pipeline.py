@@ -654,8 +654,13 @@ def process_omero_batch(
                     
             if os.path.exists(embed_zarr) and os.path.isdir(embed_zarr):
                 shutil.rmtree(embed_zarr)    # Final statistics
-    total_processed = df[df['processed']].shape[0]
-    total_skipped = df[~df['processed']].shape[0]
+    if 'processed' in df.columns:
+        processed_mask = df['processed'].astype(bool).values
+        total_processed = df.loc[processed_mask].shape[0]
+        total_skipped = df.loc[~processed_mask].shape[0]
+    else:
+        total_processed = 0
+        total_skipped = 0
     
     print("\nAll batches completed.")
     print(f"Total processed: {total_processed} units")
