@@ -4,7 +4,7 @@ These notebooks are based on [micro-sam](https://github.com/computational-cell-a
 WIth micro-sam the following routines are available.
 
 ## Overview
-- Semi manual anotation of data. This can be data on OMERO. The notebook allows to select a random set of images or patches from your dataset. Using a OMERO.table, what images you have annotated will be stored.
+- Semi manual annotation of data. This can be data on OMERO. The notebook allows to select a random set of images or patches from your dataset. Using a OMERO.table, what images you have annotated will be stored.
 - Finetuning of AI model on your data (stored on OMERO).
 - Applying fine-tuned model to your image data (on OMERO).
 
