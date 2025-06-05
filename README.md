@@ -1,4 +1,4 @@
-# Cell Observatory - OMERO Jupyter Notebooks
+# Leiden Cell Observatory - OMERO Jupyter Notebooks
 
 This GitHub repository contains Jupyter notebooks to interact with OMERO data in different ways.
 
