@@ -1,0 +1,37 @@
+# Default OMERO micro-SAM Configuration
+
+batch_processing:
+  batch_size: 3
+  output_folder: "./output"
+
+omero:
+  container_type: "dataset"
+  container_id: 0
+  source_desc: ""
+  channel: 0
+
+microsam:
+  model_type: "vit_l"
+  timepoints: [0]
+  timepoint_mode: "specific"
+  z_slices: [0]
+  z_slice_mode: "specific"
+  three_d: false
+
+patches:
+  use_patches: false
+  patch_size: [512, 512]
+  patches_per_image: 1
+  random_patches: true
+
+training:
+  segment_all: true
+  train_n: 3
+  validate_n: 3
+  group_by_image: true
+  trainingset_name: null
+
+workflow:
+  resume_from_table: false
+  read_only_mode: false
+  local_output_dir: "./omero_annotations"
