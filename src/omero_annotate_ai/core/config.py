@@ -8,8 +8,12 @@ from dataclasses import dataclass, asdict, field
 
 @dataclass
 class BatchProcessingConfig:
-    """Configuration for batch processing parameters."""
-    batch_size: int = 3
+    """Configuration for batch processing parameters.
+    
+    batch_size: Number of images to process at once. 
+                0 means process all images in one batch (default: 0)
+    """
+    batch_size: int = 0  # 0 = all images in one batch
     output_folder: str = "./output"
 
 
@@ -25,7 +29,7 @@ class OMEROConfig:
 @dataclass
 class MicroSAMConfig:
     """Configuration for micro-SAM model parameters."""
-    model_type: str = "vit_l"  # Available models: vit_b, vit_l, vit_h, vit_b_lm
+    model_type: str = "vit_b_lm"  # Default model: vit_b_lm. Available: vit_b, vit_l, vit_h, vit_b_lm
     timepoints: list = field(default_factory=lambda: [0])
     timepoint_mode: str = "specific"  # "all", "random", "specific"
     z_slices: list = field(default_factory=lambda: [0])
@@ -48,8 +52,7 @@ class TrainingConfig:
     segment_all: bool = True
     train_n: int = 3
     validate_n: int = 3
-    group_by_image: bool = True
-    trainingset_name: Optional[str] = None
+    trainingset_name: str = "default_training_set"  # Required field for training set name
 
 
 @dataclass
@@ -155,8 +158,8 @@ class AnnotationConfig:
         errors = []
         
         # Validate batch processing
-        if self.batch_processing.batch_size <= 0:
-            errors.append("batch_size must be positive")
+        if self.batch_processing.batch_size < 0:
+            errors.append("batch_size must be non-negative (0 means process all in one batch)")
         
         # Validate OMERO config
         valid_container_types = ["dataset", "plate", "project", "screen", "image"]
@@ -234,7 +237,6 @@ class AnnotationConfig:
             'segment_all': self.training.segment_all,
             'train_n': self.training.train_n,
             'validate_n': self.training.validate_n,
-            'group_by_image': self.training.group_by_image,
             'trainingset_name': self.training.trainingset_name,
             
             # Workflow
@@ -276,7 +278,7 @@ def get_config_template() -> str:
     template = """# OMERO micro-SAM Configuration Template
 
 batch_processing:
-  batch_size: 3                    # Number of images/patches to process at once
+  batch_size: 0                    # Number of images to process at once (0 = all in one batch)
   output_folder: "./output"        # Directory for temporary files
 
 omero:
@@ -286,7 +288,7 @@ omero:
   channel: 0                       # Channel index to process
 
 microsam:
-  model_type: "vit_l"             # Available models: vit_b, vit_l, vit_h, vit_b_lm
+  model_type: "vit_b_lm"          # Default model. Available: vit_b, vit_l, vit_h, vit_b_lm
   timepoints: [0]                 # List of timepoint indices
   timepoint_mode: "specific"      # Mode: all, random, specific
   z_slices: [0]                   # List of z-slice indices
@@ -296,15 +298,14 @@ microsam:
 patches:
   use_patches: false              # Extract patches instead of full images
   patch_size: [512, 512]          # Width and height of patches
-  patches_per_image: 1            # Number of patches per image
-  random_patches: true            # Random vs centered patch extraction
+  patches_per_image: 1            # Number of non-overlapping patches per image
+  random_patches: true            # Random vs grid-based patch extraction
 
 training:
   segment_all: true               # Process all images or subset
   train_n: 3                      # Number of training images (if not segment_all)
   validate_n: 3                   # Number of validation images (if not segment_all)
-  group_by_image: true            # Keep all timepoints/z-slices together
-  trainingset_name: null          # Optional name for the training set
+  trainingset_name: "default_training_set"  # Required name for the training set
 
 workflow:
   resume_from_table: false        # Resume from existing tracking table
@@ -312,7 +313,3 @@ workflow:
   local_output_dir: "./omero_annotations"  # Local output directory
 """
     return template
-
-
-# Backward compatibility aliases
-# MicroSAMConfig = AnnotationConfig  # For backward compatibility with existing code

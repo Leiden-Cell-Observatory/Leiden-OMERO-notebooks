@@ -34,11 +34,14 @@ dependencies = [
     "dask>=2021.6.0",
     "pyyaml>=6.0",
     "ipywidgets>=7.6.0",
+    "ezomero[tables]>=3.1.1",
+    "opencv-python>=4.5.0",
 ]
 
 [project.optional-dependencies]
 omero = [
-    "ezomero==3.1.1",
+    # Main OMERO dependencies are now in the core package
+    # This extra is maintained for backward compatibility
 ]
 napari = [
     "napari>=0.4.15",

@@ -80,9 +80,14 @@ class ConfigWidget:
         """Create batch processing widgets."""
         batch_size = widgets.IntSlider(
             value=self.config.batch_processing.batch_size,
-            min=1, max=10, step=1,
+            min=0, max=10, step=1,
             description='Batch Size:',
             style={'description_width': 'initial'}
+        )
+        
+        batch_info = widgets.HTML(
+            value="<small><i>0 = process all images in one batch (default)<br>"
+                  "Batch size splits processing into smaller chunks for memory efficiency</i></small>"
         )
         
         output_folder = widgets.Text(
@@ -99,6 +104,7 @@ class ConfigWidget:
         return widgets.VBox([
             widgets.HTML("<b>Batch Processing Settings</b>"),
             batch_size,
+            batch_info,
             output_folder
         ])
     
@@ -148,10 +154,14 @@ class ConfigWidget:
     def _create_image_widgets(self):
         """Create micro-SAM model widgets."""
         model_type = widgets.Dropdown(
-            options=['vit_b', 'vit_l', 'vit_h', 'vit_b_lm'],
+            options=['vit_b_lm', 'vit_b', 'vit_l', 'vit_h'],  # vit_b_lm first as default
             value=self.config.microsam.model_type,
             description='Model Type:',
             style={'description_width': 'initial'}
+        )
+        
+        model_info = widgets.HTML(
+            value="<small><i>vit_b_lm is the default model (recommended)</i></small>"
         )
         
         timepoint_mode = widgets.Dropdown(
@@ -200,6 +210,7 @@ class ConfigWidget:
         return widgets.VBox([
             widgets.HTML("<b>Micro-SAM Model Settings</b>"),
             model_type,
+            model_info,
             three_d,
             timepoint_mode,
             timepoints,
@@ -289,16 +300,10 @@ class ConfigWidget:
             style={'description_width': 'initial'}
         )
         
-        group_by_image = widgets.Checkbox(
-            value=self.config.training.group_by_image,
-            description='Group by Image',
-            style={'description_width': 'initial'}
-        )
-        
         trainingset_name = widgets.Text(
-            value=self.config.training.trainingset_name or '',
+            value=self.config.training.trainingset_name,
             description='Training Set Name:',
-            placeholder='Optional name',
+            placeholder='Enter training set name (required)',
             style={'description_width': 'initial'}
         )
         
@@ -306,7 +311,6 @@ class ConfigWidget:
             'segment_all': segment_all,
             'train_n': train_n,
             'validate_n': validate_n,
-            'group_by_image': group_by_image,
             'trainingset_name': trainingset_name
         }
         
@@ -320,7 +324,6 @@ class ConfigWidget:
             widgets.HTML("<b>Training Configuration</b>"),
             segment_all,
             subset_settings,
-            group_by_image,
             trainingset_name
         ])
     
@@ -459,7 +462,7 @@ class ConfigWidget:
                 self.config.training.segment_all = self.training_widgets['segment_all'].value
                 self.config.training.train_n = self.training_widgets['train_n'].value
                 self.config.training.validate_n = self.training_widgets['validate_n'].value
-                self.config.training.group_by_image = self.training_widgets['group_by_image'].value
+                # Note: group_by_image parameter removed as it was not useful
                 trainingset_name = self.training_widgets['trainingset_name'].value
                 self.config.training.trainingset_name = trainingset_name if trainingset_name else None
                 
@@ -532,7 +535,7 @@ class ConfigWidget:
         self.training_widgets['segment_all'].value = self.config.training.segment_all
         self.training_widgets['train_n'].value = self.config.training.train_n
         self.training_widgets['validate_n'].value = self.config.training.validate_n
-        self.training_widgets['group_by_image'].value = self.config.training.group_by_image
+        # Note: group_by_image widget removed as parameter was not useful
         self.training_widgets['trainingset_name'].value = self.config.training.trainingset_name or ''
         
         # Update workflow widgets

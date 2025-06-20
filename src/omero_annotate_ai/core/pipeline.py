@@ -99,37 +99,42 @@ class AnnotationPipeline:
             source_desc=self.config.omero.source_desc
         )
         
-        # Store annotation configuration in OMERO
-        config_namespace = "omero.annotation.microsam.config"
+        # Store annotation configuration in OMERO using ezomero
+        import ezomero
+        import pandas as pd
+        
         config_dict = self.config.to_dict()
         
-        # Store configuration as annotation
-        self.conn.getUpdateService().saveAndReturnObject(
-            self._create_config_annotation(config_dict, config_namespace)
-        )
-        
-        return table_id
-    
-    def _create_config_annotation(self, config_dict: dict, namespace: str):
-        """Create OMERO annotation object for configuration storage."""
-        import omero
-        from omero.model import MapAnnotationI
-        
-        map_ann = MapAnnotationI()
-        map_ann.setNs(omero.rtypes.rstring(namespace))
-        map_ann.setDescription(omero.rtypes.rstring("micro-SAM Configuration"))
-        
-        # Convert config to key-value pairs
-        kv_pairs = []
+        # Flatten nested config and convert to strings
+        flat_config = {}
         for key, value in config_dict.items():
             if isinstance(value, dict):
                 for sub_key, sub_value in value.items():
-                    kv_pairs.append([f"{key}.{sub_key}", str(sub_value)])
+                    flat_config[f"{key}.{sub_key}"] = str(sub_value)
             else:
-                kv_pairs.append([key, str(value)])
+                flat_config[key] = str(value)
         
-        map_ann.setMapValue(kv_pairs)
-        return map_ann
+        # Add metadata
+        flat_config.update({
+            'config_type': 'microsam_annotation_settings',
+            'created_at': pd.Timestamp.now().isoformat(),
+            'config_name': f"microsam_config_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+        })
+        
+        try:
+            config_ann_id = ezomero.post_map_annotation(
+                self.conn,
+                object_type=self.config.omero.container_type.capitalize(),
+                object_id=self.config.omero.container_id,
+                kv_dict=flat_config,
+                ns="openmicroscopy.org/omero/annotation"
+            )
+            print(f"Stored configuration as annotation ID: {config_ann_id}")
+        except Exception as e:
+            print(f"Warning: Could not store configuration annotation: {e}")
+            # Continue without storing annotation
+        
+        return table_id
     
     def _prepare_processing_units(self, images_list: List[Any]) -> List[Tuple]:
         """Prepare processing units based on configuration."""
@@ -175,13 +180,29 @@ class AnnotationPipeline:
                         for i, (x, y) in enumerate(patch_coords):
                             processing_units.append((
                                 image_id, f"{t}_{z}_{i}", 
-                                {"timepoint": t, "z_slice": z, "patch_x": x, "patch_y": y, "category": category}
+                                {
+                                    "timepoint": t, 
+                                    "z_slice": z, 
+                                    "patch_x": x, 
+                                    "patch_y": y, 
+                                    "category": category,
+                                    "model_type": self.config.microsam.model_type,
+                                    "channel": self.config.omero.channel,
+                                    "three_d": self.config.microsam.three_d
+                                }
                             ))
                     else:
                         # Single unit for full image
                         processing_units.append((
                             image_id, f"{t}_{z}",
-                            {"timepoint": t, "z_slice": z, "category": category}
+                            {
+                                "timepoint": t, 
+                                "z_slice": z, 
+                                "category": category,
+                                "model_type": self.config.microsam.model_type,
+                                "channel": self.config.omero.channel,
+                                "three_d": self.config.microsam.three_d
+                            }
                         ))
         
         return processing_units
@@ -226,7 +247,7 @@ class AnnotationPipeline:
             image_shape=image_shape,
             patch_size=patch_size,
             n_patches=patches_per_image,
-            random=random_patches
+            random_patch=random_patches,
         )
     
     def _run_microsam_annotation(self, batch_data: List[Tuple]) -> dict:
@@ -262,7 +283,7 @@ class AnnotationPipeline:
         # Run image series annotator
         segmentation_results = image_series_annotator(
             images=images,
-            output_path=str(zarr_path),
+            output_folder=str(output_path),
             model_type=model_type,
             embedding_path=str(embedding_path),
             is_volumetric=self.config.microsam.three_d
@@ -309,8 +330,12 @@ class AnnotationPipeline:
         
         return image_data
     
-    def _process_annotation_results(self, annotation_results: dict, table_id: int):
-        """Process and upload annotation results to OMERO."""
+    def _process_annotation_results(self, annotation_results: dict, table_id: int) -> int:
+        """Process and upload annotation results to OMERO.
+        
+        Returns:
+            Updated table ID (may be different if table was recreated)
+        """
         try:
             from ..processing.file_io_functions import (
                 store_annotations_in_zarr,
@@ -335,6 +360,9 @@ class AnnotationPipeline:
         
         # Convert zarr to TIFF for OMERO compatibility
         tiff_files = zarr_to_tiff(zarr_path)
+        
+        # Collect all row indices for batch update
+        completed_row_indices = []
         
         # Process each annotation result
         for i, (sequence_val, meta, row_idx) in enumerate(metadata):
@@ -361,14 +389,18 @@ class AnnotationPipeline:
                     local_file = local_dir / f"annotation_{sequence_val}.tiff"
                     shutil.copy(tiff_path, local_file)
                 
-                # Update tracking table
-                update_tracking_table_rows(
-                    conn=self.conn,
-                    table_id=table_id,
-                    row_indices=[row_idx],
-                    status="completed",
-                    annotation_file=str(tiff_path)
-                )
+                # Add to list of completed rows
+                completed_row_indices.append(row_idx)
+        
+        # Update tracking table once for all completed rows in this batch
+        if completed_row_indices:
+            table_id = update_tracking_table_rows(
+                conn=self.conn,
+                table_id=table_id,
+                row_indices=completed_row_indices,
+                status="completed",
+                annotation_file=""  # Multiple files, so leave empty
+            )
         
         # Create and upload embeddings
         if embedding_path.exists():
@@ -387,6 +419,8 @@ class AnnotationPipeline:
         for tiff_file in tiff_files:
             if Path(tiff_file).exists():
                 Path(tiff_file).unlink()
+        
+        return table_id
     
     def run(self, images_list: List[Any]) -> Tuple[int, List[Any]]:
         """Run the micro-SAM annotation pipeline.
@@ -426,6 +460,10 @@ class AnnotationPipeline:
         batch_size = self.config.batch_processing.batch_size
         processed_count = 0
         
+        # Handle batch_size = 0 (process all images in one batch)
+        if batch_size == 0:
+            batch_size = len(processing_units)
+        
         for i in range(0, len(processing_units), batch_size):
             batch = processing_units[i:i + batch_size]
             batch_num = i // batch_size + 1
@@ -443,7 +481,7 @@ class AnnotationPipeline:
                 annotation_results = self._run_microsam_annotation(batch_with_images)
                 
                 # Process results
-                self._process_annotation_results(annotation_results, table_id)
+                table_id = self._process_annotation_results(annotation_results, table_id)
                 
                 processed_count += len(batch)
                 print(f"✅ Completed batch {batch_num} ({processed_count}/{len(processing_units)} total)")
