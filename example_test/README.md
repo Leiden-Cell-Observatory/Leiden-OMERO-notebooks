@@ -2,6 +2,30 @@
 
 This folder contains example test scripts that demonstrate real-world usage of the omero-annotate-ai package.
 
+## test_omero_connection_widget.py
+
+A test script for the new OMERO connection widget with keychain support:
+
+- Demonstrates secure password storage using OS keychain
+- Tests configuration loading from .env and .ezomero files  
+- Shows password expiration functionality
+- Validates widget creation and integration
+- Provides usage examples for Jupyter notebooks
+
+### Usage
+
+```bash
+python example_test/test_omero_connection_widget.py
+```
+
+### Widget Features Demonstrated
+
+1. **Secure Password Storage**: Passwords stored in OS-native keychain (Windows Credential Manager, macOS Keychain, Linux GNOME Keyring)
+2. **Password Expiration**: Custom expiration times from 1 hour to permanent
+3. **Configuration Auto-loading**: Automatically loads from .env and .ezomero files
+4. **Connection Testing**: Test connection before saving credentials
+5. **User-Friendly Interface**: Show/hide password, clear status messages
+
 ## test_annotation_pipeline.py
 
 A comprehensive end-to-end test that demonstrates the complete micro-SAM annotation workflow:
