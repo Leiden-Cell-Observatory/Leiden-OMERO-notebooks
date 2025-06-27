@@ -36,6 +36,7 @@ dependencies = [
     "ipywidgets>=7.6.0",
     "ezomero[tables]>=3.1.1",
     "opencv-python>=4.5.0",
+    "keyring>=23.0.0",
 ]
 
 [project.optional-dependencies]
