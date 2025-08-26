@@ -1,0 +1,22 @@
+[workspace]
+authors = ["Maarten Paul <maarten.paul@gmail.com>"]
+channels = ["conda-forge"]
+name = "microsam"
+platforms = ["win-64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.12.*"
+micro_sam = ">=1.6.0,<2"
+
+[target.win-64.pypi-dependencies]
+zeroc-ice = { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" }
+
+[target.linux-64.pypi-dependencies]
+zeroc-ice = { url = "https://github.com/glencoesoftware/zeroc-ice-py-linux-x86_64/releases/download/20240202/zeroc_ice-3.6.5-cp312-cp312-manylinux_2_28_x86_64.whl" }
+
+[pypi-dependencies]
+ezomero = ">=2.1.0, <3"
+omero-py = ">=5.13.1, <6"
