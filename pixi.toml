@@ -1,56 +1,38 @@
 [project]
-name = "jupyter-xfce-env"
+name = "jupyter-multi-env"
 version = "0.1.0"
-channels = ["conda-forge", "pytorch"] # Add other channels as needed
-platforms = ["linux-64"] # Specify your target platform
+channels = ["conda-forge", "pytorch"]
+platforms = ["win-64","linux-64"]
 
 [dependencies]
 python = "3.12.*"
-# micro_sam dependencies (conda packages if available on conda-forge)
-micro_sam = "*"
-zeroc-ice = "3.6.5" # As per your existing pip install, check conda-forge for a direct package if possible
-ezomero = "*"
-python-dotenv = "*"
-omero-py = "*"
-opencv-python-headless = "*"
-
-# cellpose dependencies
-cellpose = "*"
-# [gui] for cellpose is often a pip extra, let's assume it resolves correctly
-# or you might need to specify specific GUI-related deps if pixi doesn't pull them
-# e.g., qt, pyqt, napari, etc.
-
-# omero-env dependencies (already covered above)
-
-# Jupyter and server proxy
 jupyter = "*"
 jupyterlab = "*"
-jupyter-server-proxy = "*"
-nb_conda_kernels = "*" # While you're moving away from direct conda, nb_conda_kernels can still be useful if you have other conda environments you want to see. Pixi itself provides good kernel integration without it, but it doesn't hurt.
-
-# System-level Python packages that might have conda equivalents
-# If a direct Conda package is not found, Pixi will look for it on PyPI.
-# For example, if 'zeroc-ice' isn't on conda-forge with that exact version, it will attempt PyPI.
-
-# XFCE related dependencies (these are system packages, not typically managed by pixi)
-# We will still install these using apt-get in the Dockerfile.
-
-[target.win-64.pypi-dependencies]
-zeroc-ice = { url = "https://github.com/glencoesoftware/zeroc-ice-py-win-x86_64/releases/download/20240325/zeroc_ice-3.6.5-cp312-cp312-win_amd64.whl" }
-
-[target.linux-64.pypi-dependencies]
-zeroc-ice = { url = "https://github.com/glencoesoftware/zeroc-ice-py-linux-x86_64/releases/download/20240202/zeroc_ice-3.6.5-cp312-cp312-manylinux_2_28_x86_64.whl" }
+python-dotenv = "*"
+zeroc-ice = "==3.6.5"
+omero-py = "*"
+ipykernel = "*"
 
 [pypi-dependencies]
-ezomero = ">=2.1.0, <3"
-omero-py = ">=5.13.1, <6"
+ezomero = ">=3.2.0"
+pixi-kernel = "*"
+jupyter-remote-desktop-proxy = "*"  # This replaces your custom VNC setup
+opencv-contrib-python = "*"
 
-[tasks]
-# Example task to run a Python script
-# start-lab = "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser"
-# The base image's CMD already handles this, so you might not need it as a pixi task for the primary entrypoint.
-# However, for running applications *within* the XFCE environment, you'd define tasks.
+[feature.microsam.dependencies]
+micro_sam = ">=1.6.0,<2"
+napari = "*"
+napari-omero = "*"
 
-# Example to start VNC/XFCE via pixi. You could move your start_xfce_vnc.sh here
-# start-xfce = ["/usr/local/bin/start_xfce_vnc.sh"]
-# The jupyter-server-proxy command usually executes directly, but this is an option.
+[feature.cellpose.dependencies]
+cellpose = ">=4.0.6, <5"
+
+[feature.gui.dependencies]
+qt-main = "*"
+pyqt = "*"
+
+[environments]
+default = { features = ["gui"] }
+microsam = { features = ["microsam", "gui"] }
+cellpose = { features = ["cellpose", "gui"] }
+full = { features = ["microsam", "cellpose", "gui"] }

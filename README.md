@@ -43,11 +43,15 @@ jupyter notebook
 
 We provide a Docker container with all necessary dependencies pre-installed. This is the easiest way to get started.
 
+Features:
+- pixi-kernel - specify different pixi environment for the notebooks - https://github.com/renan-r-santos/pixi-kernel
+- jupyter-remote-desktop-proxy - running an XFCE desktop next to Jupter to run GUI applications - https://github.com/jupyterhub/jupyter-remote-desktop-proxy/blob/main/README.md
+
 ### Prerequisites
 
 1. Install [Docker](https://www.docker.com/products/docker-desktop/)
 
-2. For GUI applications (cellpose, napari, etc.):
+2. To access GUI applications from within the docker container (cellpose, napari, etc.):
    - **Windows**: Install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or [MobaXterm](https://mobaxterm.mobatek.net/)
    - **macOS**: Install [XQuartz](https://www.xquartz.org/)
    - **Linux**: X11 is already installed
