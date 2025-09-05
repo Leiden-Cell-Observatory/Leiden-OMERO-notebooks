@@ -8,82 +8,82 @@ This GitHub repository contains Jupyter notebooks to interact with OMERO data in
 - Run inference on OMERO datasets using micro-SAM models.
 - Upload metadata from [MIHCSME](https://fairdomhub.org/investigations/575) (Minimal Information for High Content Screening in Microscopy Experiments) Excel files to OMERO, allowing for structured metadata storage and retrieval.
 
-These notebooks are still in an early stage of development and may not be fully functional or stable. Any feedback is highly appreciated.  
+These notebooks are still in an early stage of development and may not be fully functional or stable. Any feedback is highly appreciated.  
 
 # Setting up
-These notebooks can either be run locally using conda environments or can be used by installing the docker image provided which provides everything that is needed to run the notebooks on a Jupyter server.
+These notebooks can be run either locally by setting up the environments with Pixi, or by using the provided Docker image, which includes a Jupyter server and all necessary dependencies.
 
-## Local Installation
+## Local Installation (Recommended for development)
 
-It is recommended to run these notebooks in a conda environment to make handling the package dependencies easier.
+We use [Pixi](https://pixi.sh/) to manage the project's dependencies. Pixi simplifies environment management and ensures reproducibility across different platforms (Windows, Linux, macOS).
 
-You will need to install conda, if you haven't done yet. It is recommended to use MiniForge for this: [MiniForge](https://github.com/conda-forge/miniforge).
+1.  **Install Pixi:**
+    If you haven't already, install Pixi on your machine.
+    ```sh
+    # On most systems
+    curl -fsSL [https://pixi.sh/install.sh](https://pixi.sh/install.sh) | bash
+    ```
+    For more installation options, see the [Pixi Installation Guide](https://pixi.sh/latest/getting-started/installation/).
 
-Handling multiple AI tools in a single environment can be difficult, 
-hence separate conda environment files are available to should work with the tool and OMERO.
+2.  **Set up the Environments:**
+    The project uses a single `pixi.toml` file to define all environments. The `pixi install` command will resolve and download all necessary packages.
+    ```sh
+    pixi install --all
+    ```
+    This command will also create a `pixi.lock` file, which guarantees that everyone running the project will have the exact same package versions.
 
-Use on of the environment yaml files to setup the conda environment.
-```sh
-conda env create -f environment_omero_micro_sam.yml
-```
-
-Then activate the environment:
-
-```sh
-conda activate micro-sam
-```
-
-Then start the Jupyter server:
-
-```sh
-jupyter notebook
-```
+3.  **Run the Notebooks:**
+    You can start the Jupyter server from any of the defined environments. For example, to use the environment for micro-sam:
+    ```sh
+    # To start the Jupyter server with the micro-sam environment
+    pixi run --environment microsam jupyter lab
+    ```
+    To run a different environment, simply change the `--environment` flag to `cellpose`, `full`, or `default`.
 
 ## Docker Installation
 
-We provide a Docker container with all necessary dependencies pre-installed. This is the easiest way to get started.
-
-Features:
-- pixi-kernel - specify different pixi environment for the notebooks - https://github.com/renan-r-santos/pixi-kernel
-- jupyter-remote-desktop-proxy - running an XFCE desktop next to Jupter to run GUI applications - https://github.com/jupyterhub/jupyter-remote-desktop-proxy/blob/main/README.md
+We provide a Docker container with all necessary dependencies and a pre-configured graphical desktop. This is the easiest way to get started and run GUI-based notebooks like `napari`.
 
 ### Prerequisites
 
-1. Install [Docker](https://www.docker.com/products/docker-desktop/)
+1.  Install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+2.  To view graphical applications like `napari` from the container, a VNC client is needed.
+    - **Windows**: Install a VNC client like [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or [MobaXterm](https://mobaxterm.mobatek.net/).
+    - **macOS**: Install [XQuartz](https://www.xquartz.org/).
+    - **Linux**: X11 is typically pre-installed.
 
-2. To access GUI applications from within the docker container (cellpose, napari, etc.):
-   - **Windows**: Install [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or [MobaXterm](https://mobaxterm.mobatek.net/)
-   - **macOS**: Install [XQuartz](https://www.xquartz.org/)
-   - **Linux**: X11 is already installed
+### Building and Running the Container
 
-### Running the Container
+1.  **Clone the repository and navigate to its directory:**
+    ```sh
+    git clone [https://github.com/yourusername/omero-ipynb.git](https://github.com/yourusername/omero-ipynb.git)
+    cd omero-ipynb
+    ```
 
-Clone this repository and navigate to its directory:
+2.  **Build the Docker image:**
+    This command builds the container with all dependencies pre-installed.
+    ```sh
+    docker build -t omero-notebooks-xfce -f Dockerfile_xfce_gpu .
+    ```
 
-```bash
-git clone https://github.com/yourusername/omero-ipynb.git
-cd omero-ipynb
-```
+3.  **Run the container:**
+    This command runs the container with GPU support and exposes the necessary ports.
+    ```sh
+    docker run -it --rm --gpus all -p 8888:8888 -p 6080:6080 omero-notebooks-xfce
+    ```
+    - The `--gpus all` flag enables GPU acceleration.
+    - The `-p 8888:8888` flag maps the Jupyter Lab port.
+    - The `-p 6080:6080` flag maps the VNC server port for the desktop.
 
-#### Build the Docker image:
-
-```powershell
-docker build -t omero-ipynb .
-```
-
-#### Run the container:
-
-For Windows (after starting VcXsrv with "Disable access control" checked):
-```powershell
-docker run -p 8888:8888 -v ${PWD}/data:/home/jovyan/data -v ${PWD}/notebooks:/home/jovyan/notebooks -v ${PWD}/microsam:/home/jovyan/microsam -e DISPLAY=host.docker.internal:0 --gpus=all  omero-ipynb 
-```
-Open the Jupyter URL that appears in the console output.
+4.  **Access the server:**
+    - **Jupyter Lab:** Open your web browser and navigate to the URL provided in the console output (e.g., `http://127.0.0.1:8888/...`).
+    - **VNC Desktop:** Use your VNC client to connect to `localhost:6080` to access the XFCE desktop.
 
 ## Micro-SAM
 These notebooks are based on [micro-sam](https://github.com/computational-cell-analytics/micro-sam).
 The notebooks allow to:
-- Annotate datasets stored in OMERO. These annotations are stored with the original data using OMERO.tables, OMERO.ROIs . This structured storing of the annotations allow to train or fine-tune different AI models.
-- Finetune micro-sam models
+- Annotate datasets stored in OMERO. These annotations are stored with the original data using OMERO.tables, OMERO.ROIs. This structured storing of the annotations allows to train or fine-tune different AI models.
+- Finetune micro-sam models.
 - Run inference on OMERO-data.
 
 For more detailed information, please refer to the [micro-sam README](../microsam/README.md).
@@ -92,15 +92,15 @@ For more detailed information, please refer to the [micro-sam README](../microsa
 
 
 ## Stardist
-Notebooks to apply Stardist segmentation on OMERO datasets (2D,3D and timeseries data).
+Notebooks to apply Stardist segmentation on OMERO datasets (2D, 3D, and timeseries data).
 
 ## Acknowledgments
 These notebooks depend on a large number of open-source software packages. Some of the most important:
 - [micro-SAM](https://github.com/computational-cell-analytics/micro-sam)
 - [Cellpose](https://github.com/MouseLand/cellpose/)
-- napari-omero[https://github.com/tlambert03/napari-omero]
+- [napari-omero](https://github.com/tlambert03/napari-omero)
 
 ## Contact
 For questions, reach out to Maarten Paul (m.w.paul@lacdr.leidenuniv.nl). For issues or suggestions, please use the Issues section of the GitHub repository.
 
-This repository is developed with the NL-BioImaging intrastructure, funded by NWO (National Roadmap for Large-Scale Research Facilities).
+This repository is developed with the NL-BioImaging infrastructure, funded by NWO (National Roadmap for Large-Scale Research Facilities).

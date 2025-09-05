@@ -2,22 +2,33 @@
 name = "jupyter-multi-env"
 version = "0.1.0"
 channels = ["conda-forge", "pytorch"]
-platforms = ["win-64","linux-64"]
+platforms = ["win-64", "linux-64"]
 
 [dependencies]
 python = "3.12.*"
 jupyter = "*"
 jupyterlab = "*"
 python-dotenv = "*"
+# Core packages that all environments should have
+ipykernel = "*"
 zeroc-ice = "==3.6.5"
 omero-py = "*"
-ipykernel = "*"
+jupyter-remote-desktop-proxy = "*"
+
+# Explicitly ask for the GPU version of PyTorch
+pytorch-gpu = "*"
+torchvision = "*"
+
+[system-requirements]
+# This tells pixi to look for packages compatible with CUDA 12.8
+cuda = "12.8"
 
 [pypi-dependencies]
 ezomero = ">=3.2.0"
 pixi-kernel = "*"
-jupyter-remote-desktop-proxy = "*"  # This replaces your custom VNC setup
-opencv-contrib-python = "*"
+# jupyter-remote-desktop-proxy has a conda-forge package, so let's try to get it from there.
+# If it fails, we can move it back to pypi-dependencies.
+opencv-contrib-python = "*" # It's better to get this from conda-forge if possible
 
 [feature.microsam.dependencies]
 micro_sam = ">=1.6.0,<2"
@@ -27,9 +38,13 @@ napari-omero = "*"
 [feature.cellpose.dependencies]
 cellpose = ">=4.0.6, <5"
 
+
 [feature.gui.dependencies]
 qt-main = "*"
 pyqt = "*"
+
+[feature.cellpose.pypi-dependencies]
+pyqt6 = "==6.9.0"
 
 [environments]
 default = { features = ["gui"] }
