@@ -1,27 +1,50 @@
-#FROM ghcr.io/prefix-dev/pixi:0.53.0-noble-cuda-12.8.1
-FROM ghcr.io/prefix-dev/pixi:latest
+# Use the official pixi image with CUDA support
+FROM ghcr.io/prefix-dev/pixi:0.53.0-noble-cuda-12.8.1 AS build
+
+# Switch to root to install system packages
 USER root
 
-# Install XFCE desktop and VNC server (based on jupyter-remote-desktop-proxy requirements)
-RUN apt-get clean && apt-get update && \
+# Install essential system packages for the desktop environment and GUI applications.
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    dbus-x11 \
-    xclip \
-    xfce4 \
-    xfce4-panel \
-    xfce4-session \
-    xfce4-settings \
-    xorg \
-    xubuntu-icon-theme \
-    fonts-dejavu \
-    tigervnc-standalone-server \
+        # Core Desktop and VNC
+        tigervnc-standalone-server \
+        dbus-x11 \
+        xclip \
+        xfce4 \
+        xorg \
+        xubuntu-icon-theme \
+        \
+        # Graphics and rendering libraries for GUI
+        libopengl0 \
+        mesa-utils \
+        libgl1-mesa-dev \
+        libgtk-3-0 \
+        \
+        # Development tools
+        build-essential \
+        git \
+        sudo \
+        \
+        # Simple text editor and browser for the desktop
+        mousepad \
+        epiphany-browser \
+        \
+        # Fonts and miscellaneous
+        fonts-dejavu \
     && apt-get remove -y xfce4-screensaver \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create ubuntu user directories and set permissions
-RUN mkdir -p /home/ubuntu && chown -R ubuntu:ubuntu /home/ubuntu
+# Fix user and group IDs and ensure correct permissions.
+# This explicitly creates the .Xauthority file which was missing in the logs.
+RUN usermod -u 1000 ubuntu && \
+    groupmod -g 1000 ubuntu && \
+    chown -R ubuntu:ubuntu /home/ubuntu && \
+    touch /home/ubuntu/.Xauthority && \
+    chown ubuntu:ubuntu /home/ubuntu/.Xauthority
 
+# Switch to the non-root 'ubuntu' user
 USER ubuntu
 WORKDIR /home/ubuntu
 
@@ -29,15 +52,23 @@ WORKDIR /home/ubuntu
 ENV MICROSAM_CACHEDIR=/home/ubuntu/microsam_cache
 ENV CELLPOSE_LOCAL_MODELS_PATH=/home/ubuntu/cellpose_models
 ENV PIXI_CACHE_DIR=/home/ubuntu/.pixi/cache
+ENV CONDA_OVERRIDE_CUDA=12.8
 
+# Create necessary directories
 RUN mkdir -p ${MICROSAM_CACHEDIR} ${CELLPOSE_LOCAL_MODELS_PATH} ${PIXI_CACHE_DIR}
 
-# Install pixi environments with jupyter-remote-desktop-proxy
-COPY pixi.toml .
-COPY pixi.lock .
-RUN pixi install --all
+# Explicitly copy only the required project files for the build.
+COPY --chown=ubuntu:ubuntu pixi.toml /home/ubuntu/
+COPY --chown=ubuntu:ubuntu pixi.lock /home/ubuntu/
 
+# Install dependencies from the locked environment.
+RUN pixi install --locked --all
+
+# Add a debugging step to verify CUDA is available after installation
+RUN pixi run python -c "import torch; print('CUDA is available:', torch.cuda.is_available());"
+
+# Expose the port for Jupyter Lab
 EXPOSE 8888
 
-# Start Jupyter Lab
+# Command to start the application
 CMD ["pixi", "run", "jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

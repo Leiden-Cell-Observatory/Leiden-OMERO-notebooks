@@ -26,9 +26,8 @@ cuda = "12.8"
 [pypi-dependencies]
 ezomero = ">=3.2.0"
 pixi-kernel = "*"
-# jupyter-remote-desktop-proxy has a conda-forge package, so let's try to get it from there.
-# If it fails, we can move it back to pypi-dependencies.
-opencv-contrib-python = "*" # It's better to get this from conda-forge if possible
+# opencv-contrib-python has a conda-forge package, so it is better to get it from there.
+opencv-contrib-python = "*"
 
 [feature.microsam.dependencies]
 micro_sam = ">=1.6.0,<2"
@@ -38,16 +37,24 @@ napari-omero = "*"
 [feature.cellpose.dependencies]
 cellpose = ">=4.0.6, <5"
 
-
 [feature.gui.dependencies]
 qt-main = "*"
 pyqt = "*"
 
-[feature.cellpose.pypi-dependencies]
-pyqt6 = "==6.9.0"
+# We've removed the conflicting pyqt6 dependency from here.
+# Relying on `pyqt` from conda-forge should solve your issue.
 
 [environments]
 default = { features = ["gui"] }
 microsam = { features = ["microsam", "gui"] }
 cellpose = { features = ["cellpose", "gui"] }
 full = { features = ["microsam", "cellpose", "gui"] }
+
+# Add tasks for easy execution from the command line
+[tasks]
+# Task to run the Jupyter Lab server
+jupyter-lab = "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root"
+# Task to run napari with the microsam environment
+napari-microsam = "pixi run -e microsam napari"
+# Task to run cellpose with the cellpose environment
+cellpose-gui = "pixi run -e cellpose cellpose"

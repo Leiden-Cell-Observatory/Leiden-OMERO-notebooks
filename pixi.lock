@@ -532,9 +532,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/d0/ef/c5422ce8af73928d194a6606f8ae36e93a52fd5e8df5abd366903a5ca8da/msgspec-0.19.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/13/756b13b8d5d417a0b4c3bf6ceafb59df0ed05cec7fedc2490bbbf5e60ebc/opencv_contrib_python-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/5a/16/41f6c2e5227999a0e501d59024f3d51ab956a5a304208151a37f3c9e141c/pixi_kernel-0.6.6-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/ed/3a/bcc7687c5a11079bbd1606a015514562f2ac8cb01c5e3e4a3b30fcbdad36/PyQt6-6.9.0-cp39-abi3-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/a8/07/21f7dc188e35b46631707f3b40ace5643a0e03a8e1e446854826d08a04ae/pyqt6_qt6-6.9.2-py3-none-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/21/40/de9491213f480a27199690616959a17a0f234962b86aa1dd4ca2584e922d/pyqt6_sip-13.10.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/57/4d/a7545bf6c62b0dbe5795f22ea9e88cc070fdced5c34663ebc5bed2f610c0/returns-0.26.0-py3-none-any.whl
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/win-64/_libavif_api-1.3.0-h57928b3_2.conda
@@ -961,9 +958,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b1/ef/27dd35a7049c9a4f4211c6cd6a8c9db0a50647546f003a5867827ec45391/msgspec-0.19.0-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/0d/c6/146487546adc4726f0be591a65b466973feaa58cc3db711087e802e940fb/opencv_contrib_python-4.11.0.86-cp37-abi3-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/5a/16/41f6c2e5227999a0e501d59024f3d51ab956a5a304208151a37f3c9e141c/pixi_kernel-0.6.6-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/d1/a8/955cfd880f2725a218ee7b272c005658e857e9224823d49c32c93517f6d9/PyQt6-6.9.0-cp39-abi3-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/63/3a/d811ed1aa579b93ab56188d1371b05eacb4188599d83e72b761263a10f92/pyqt6_qt6-6.9.2-py3-none-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/02/21/cc80e03f1052408c62c341e9fe9b81454c94184f4bd8a95d29d2ec86df92/pyqt6_sip-13.10.2-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/57/4d/a7545bf6c62b0dbe5795f22ea9e88cc070fdced5c34663ebc5bed2f610c0/returns-0.26.0-py3-none-any.whl
   default:
     channels:
@@ -2245,9 +2239,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/d0/ef/c5422ce8af73928d194a6606f8ae36e93a52fd5e8df5abd366903a5ca8da/msgspec-0.19.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/13/756b13b8d5d417a0b4c3bf6ceafb59df0ed05cec7fedc2490bbbf5e60ebc/opencv_contrib_python-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/5a/16/41f6c2e5227999a0e501d59024f3d51ab956a5a304208151a37f3c9e141c/pixi_kernel-0.6.6-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/ed/3a/bcc7687c5a11079bbd1606a015514562f2ac8cb01c5e3e4a3b30fcbdad36/PyQt6-6.9.0-cp39-abi3-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/a8/07/21f7dc188e35b46631707f3b40ace5643a0e03a8e1e446854826d08a04ae/pyqt6_qt6-6.9.2-py3-none-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/21/40/de9491213f480a27199690616959a17a0f234962b86aa1dd4ca2584e922d/pyqt6_sip-13.10.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/57/4d/a7545bf6c62b0dbe5795f22ea9e88cc070fdced5c34663ebc5bed2f610c0/returns-0.26.0-py3-none-any.whl
       win-64:
       - conda: https://conda.anaconda.org/conda-forge/win-64/_libavif_api-1.3.0-h57928b3_2.conda
@@ -2788,9 +2779,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b1/ef/27dd35a7049c9a4f4211c6cd6a8c9db0a50647546f003a5867827ec45391/msgspec-0.19.0-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/0d/c6/146487546adc4726f0be591a65b466973feaa58cc3db711087e802e940fb/opencv_contrib_python-4.11.0.86-cp37-abi3-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/5a/16/41f6c2e5227999a0e501d59024f3d51ab956a5a304208151a37f3c9e141c/pixi_kernel-0.6.6-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/d1/a8/955cfd880f2725a218ee7b272c005658e857e9224823d49c32c93517f6d9/PyQt6-6.9.0-cp39-abi3-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/63/3a/d811ed1aa579b93ab56188d1371b05eacb4188599d83e72b761263a10f92/pyqt6_qt6-6.9.2-py3-none-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/02/21/cc80e03f1052408c62c341e9fe9b81454c94184f4bd8a95d29d2ec86df92/pyqt6_sip-13.10.2-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/57/4d/a7545bf6c62b0dbe5795f22ea9e88cc070fdced5c34663ebc5bed2f610c0/returns-0.26.0-py3-none-any.whl
   microsam:
     channels:
@@ -15139,40 +15127,6 @@ packages:
   - pkg:pypi/pyqt5-sip?source=hash-mapping
   size: 75189
   timestamp: 1749224660677
-- pypi: https://files.pythonhosted.org/packages/d1/a8/955cfd880f2725a218ee7b272c005658e857e9224823d49c32c93517f6d9/PyQt6-6.9.0-cp39-abi3-win_amd64.whl
-  name: pyqt6
-  version: 6.9.0
-  sha256: d36482000f0cd7ce84a35863766f88a5e671233d5f1024656b600cd8915b3752
-  requires_dist:
-  - pyqt6-sip>=13.8,<14
-  - pyqt6-qt6>=6.9.0,<6.10.0
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/ed/3a/bcc7687c5a11079bbd1606a015514562f2ac8cb01c5e3e4a3b30fcbdad36/PyQt6-6.9.0-cp39-abi3-manylinux_2_28_x86_64.whl
-  name: pyqt6
-  version: 6.9.0
-  sha256: e344868228c71fc89a0edeb325497df4ff731a89cfa5fe57a9a4e9baecc9512b
-  requires_dist:
-  - pyqt6-sip>=13.8,<14
-  - pyqt6-qt6>=6.9.0,<6.10.0
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/63/3a/d811ed1aa579b93ab56188d1371b05eacb4188599d83e72b761263a10f92/pyqt6_qt6-6.9.2-py3-none-win_amd64.whl
-  name: pyqt6-qt6
-  version: 6.9.2
-  sha256: f9289768039bef4a63e5949b7f8cfbbddc3b6d24bd58c21ba0f2921bed8d1c08
-- pypi: https://files.pythonhosted.org/packages/a8/07/21f7dc188e35b46631707f3b40ace5643a0e03a8e1e446854826d08a04ae/pyqt6_qt6-6.9.2-py3-none-manylinux_2_28_x86_64.whl
-  name: pyqt6-qt6
-  version: 6.9.2
-  sha256: 9abfc0ee4a8293a6442128ae3f87f68e82e2a949d7b9caabd98c86ba5679ab48
-- pypi: https://files.pythonhosted.org/packages/02/21/cc80e03f1052408c62c341e9fe9b81454c94184f4bd8a95d29d2ec86df92/pyqt6_sip-13.10.2-cp312-cp312-win_amd64.whl
-  name: pyqt6-sip
-  version: 13.10.2
-  sha256: c7b34a495b92790c70eae690d9e816b53d3b625b45eeed6ae2c0fe24075a237e
-  requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/21/40/de9491213f480a27199690616959a17a0f234962b86aa1dd4ca2584e922d/pyqt6_sip-13.10.2-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl
-  name: pyqt6-sip
-  version: 13.10.2
-  sha256: 37af463dcce39285e686d49523d376994d8a2508b9acccb7616c4b117c9c4ed7
-  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/noarch/pyqtgraph-0.13.7-pyhd8ed1ab_1.conda
   sha256: bc3ca92c679dc421d37feeabe2d8d8c35247e93227bb22bd02aedbf5531eaadb
   md5: 569357b4d0b4565c57698a6e2dade74e
