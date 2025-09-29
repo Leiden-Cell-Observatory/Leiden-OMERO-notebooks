@@ -14,6 +14,8 @@ ipykernel = "*"
 zeroc-ice = "==3.6.5"
 omero-py = "*"
 jupyter-remote-desktop-proxy = "*"
+qt-main = "*"
+
 
 # Explicitly ask for the GPU version of PyTorch
 pytorch-gpu = "*"
@@ -28,27 +30,24 @@ ezomero = ">=3.2.0"
 pixi-kernel = "*"
 # opencv-contrib-python has a conda-forge package, so it is better to get it from there.
 opencv-contrib-python = "*"
+PyQt6 = "==6.9.0"
+omero-annotate-ai = ">=0.1.0, <0.2"
+
 
 [feature.microsam.dependencies]
 micro_sam = ">=1.6.0,<2"
 napari = "*"
 napari-omero = "*"
-
-[feature.cellpose.dependencies]
-cellpose = ">=4.0.6, <5"
-
-[feature.gui.dependencies]
-qt-main = "*"
 pyqt = "*"
 
-# We've removed the conflicting pyqt6 dependency from here.
-# Relying on `pyqt` from conda-forge should solve your issue.
+
+[feature.cellpose.pypi-dependencies]
+cellpose = { version = ">=4.0.6, <5", extras = ["gui"] }
 
 [environments]
-default = { features = ["gui"] }
-microsam = { features = ["microsam", "gui"] }
-cellpose = { features = ["cellpose", "gui"] }
-full = { features = ["microsam", "cellpose", "gui"] }
+microsam = { features = ["microsam"] }
+cellpose = { features = ["cellpose"] }
+full = { features = ["microsam", "cellpose"] }
 
 # Add tasks for easy execution from the command line
 [tasks]

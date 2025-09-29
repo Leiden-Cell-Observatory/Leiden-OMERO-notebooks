@@ -9,10 +9,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         # Core Desktop and VNC
         tigervnc-standalone-server \
+        xfce4 \
+        xfce4-goodies \
         dbus-x11 \
         xclip \
-        xfce4-session \
-        xfce4-settings \
         xorg \
         xubuntu-icon-theme \
         \
@@ -23,16 +23,20 @@ RUN apt-get update && \
         \
         # Other X11 and related libs (often dependencies of other packages)
         libsm6 \
+        libxrender1 \
         libxext6 \
         libgeos-dev \
         libgtk-3-0 \
+        libglib2.0-0 \
+        libxcb-cursor0 \
+        libxcb-xinerama0 \
+        libxcb-cursor-dev \
         \
         # Development tools for building dependencies
         build-essential \
         git \
         \
         # Simple text editor and browser for the desktop
-        mousepad \
         epiphany-browser \
         \
         # Fonts and miscellaneous
@@ -44,10 +48,9 @@ RUN apt-get update && \
 # Fix user and group IDs to 1000 to prevent permission issues on host systems.
 RUN usermod -u 1000 ubuntu \
     && groupmod -g 1000 ubuntu \
-    && usermod -u 1001 pixi \
-    && groupmod -g 1001 pixi \
     && chown -R ubuntu:ubuntu /home/ubuntu \
-    && chown -R pixi:pixi /home/pixi
+    && touch /home/ubuntu/.Xauthority \
+    && chown ubuntu:ubuntu /home/ubuntu/.Xauthority
 
 # Switch to the non-root 'ubuntu' user
 USER ubuntu
@@ -70,11 +73,14 @@ COPY --chown=ubuntu:ubuntu setup_desktop.sh /home/ubuntu/
 # Install dependencies from the locked environment.
 RUN pixi install --locked --all
 
-# Run the script to set up the desktop shortcuts
+# Copy the omero-annotate notebook (after pixi install to avoid rebuilding dependency layers)
+COPY --chown=ubuntu:ubuntu omero-annotate/ /home/ubuntu/notebooks/omero-annotate/
+
+# Run the script to set up the desktop shortcuts and permissions
 RUN bash /home/ubuntu/setup_desktop.sh
 
 # Expose the port for Jupyter Lab
 EXPOSE 8888
 
 # Command to start the application
-CMD ["pixi", "run", "jupyter-lab"]
+CMD ["pixi", "run", "jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''", "--NotebookApp.allow_origin='*'"]
