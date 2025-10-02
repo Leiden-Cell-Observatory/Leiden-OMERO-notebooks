@@ -65,6 +65,21 @@ ENV CONDA_OVERRIDE_CUDA=12.8
 # Create necessary directories
 RUN mkdir -p ${MICROSAM_CACHEDIR} ${CELLPOSE_LOCAL_MODELS_PATH} ${PIXI_CACHE_DIR}
 
+RUN echo "openssl_conf = openssl_init\n\
+\n\
+[openssl_init]\n\
+ssl_conf = ssl_sect\n\
+\n\
+[ssl_sect]\n\
+system_default = system_default_sect\n\
+\n\
+[system_default_sect]\n\
+MinProtocol = TLSv1.2\n\
+CipherString = DEFAULT:@SECLEVEL=1" > /home/ubuntu/openssl.cnf
+
+# Set environment variable to use custom OpenSSL config
+ENV OPENSSL_CONF=/home/ubuntu/openssl.cnf
+
 # Explicitly copy only the required project files and the setup script for the build.
 COPY --chown=ubuntu:ubuntu pixi.toml /home/ubuntu/
 COPY --chown=ubuntu:ubuntu pixi.lock /home/ubuntu/
